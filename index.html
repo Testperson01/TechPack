@@ -3,12 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TechPack Pro Max</title>
+    <title>TechPack Pro Max (Cloud Sync)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Firebase SDKs laden -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Firebase für React verfügbar machen
+        window.FirebaseDeps = { initializeApp, getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, getFirestore, doc, setDoc, onSnapshot };
+    </script>
+    
     <style>
         body { -webkit-tap-highlight-color: transparent; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
@@ -20,35 +31,49 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useMemo, useEffect } = React;
+        const { useState, useMemo, useEffect, useRef } = React;
         
-        const LucideIcon = ({ name, size = 24, strokeWidth = 2, className = "" }) => {
+        // Stabiler Wrapper für die Lucide Icons
+        const LucideIcon = ({ name, size = 24, strokeWidth = 2, className = "", onClick }) => {
+            const iconRef = useRef(null);
+            
             useEffect(() => {
-                if (window.lucide) {
-                    window.lucide.createIcons();
+                if (iconRef.current && window.lucide) {
+                    // Setzt das Icon-Tag zurück, damit lucide es frisch generieren kann
+                    iconRef.current.innerHTML = `<i data-lucide="${name}"></i>`;
+                    window.lucide.createIcons({ 
+                        root: iconRef.current,
+                        attrs: {
+                            width: size,
+                            height: size,
+                            'stroke-width': strokeWidth
+                        }
+                    });
                 }
-            });
-            return <i data-lucide={name} className={className} style={{ width: size, height: size, strokeWidth: strokeWidth }}></i>;
+            }, [name, size, strokeWidth]);
+
+            return (
+                <span 
+                    ref={iconRef} 
+                    className={`inline-flex items-center justify-center ${className}`} 
+                    onClick={onClick}
+                    style={{ cursor: onClick ? 'pointer' : 'inherit' }}
+                ></span>
+            );
         };
 
         const App = () => {
-            // --- STATE ---
-            const [categories, setCategories] = useState(['Kamera', 'Audio', 'Licht', 'Zubehör', 'Kabel', 'Energie']);
-            const [inventory, setInventory] = useState([
-                { id: 'inv-1', name: "Sony Alpha 7 IV", category: "Kamera", quantity: 1, accessories: [{ id: 'acc-1', name: "Akku NP-FZ100" }, { id: 'acc-2', name: "SD Karte 128GB" }] },
-                { id: 'inv-2', name: "DJI Mic 2 Set", category: "Audio", quantity: 2, accessories: [{ id: 'acc-3', name: "Lavalier Mikro" }] }
-            ]);
+            // --- CLOUD SYNC STATE ---
+            const [user, setUser] = useState(null);
+            const [cloudReady, setCloudReady] = useState(false);
+            const [syncStatus, setSyncStatus] = useState('connecting'); // connecting, synced, syncing, no-config, error
+            const [isDataLoaded, setIsDataLoaded] = useState(false);
+            const isRemoteUpdate = useRef(false);
 
-            const [jobs, setJobs] = useState([
-                { 
-                    id: 'job-1', 
-                    name: "Test Dreh", 
-                    date: new Date().toISOString().split('T')[0], 
-                    selectedItemIds: ['inv-1'], 
-                    packingStatus: { 'inv-1': 'fehlt' }, 
-                    accessoryStatus: { 'inv-1': { 'acc-1': 'fehlt', 'acc-2': 'fehlt' } } 
-                }
-            ]);
+            // --- APP STATE ---
+            const [categories, setCategories] = useState([]);
+            const [inventory, setInventory] = useState([]);
+            const [jobs, setJobs] = useState([]);
 
             const [activeTab, setActiveTab] = useState('planer');
             const [activeJobId, setActiveJobId] = useState(null);
@@ -56,15 +81,126 @@
             const [showCategoryModal, setShowCategoryModal] = useState(false);
             const [editingItem, setEditingItem] = useState(null);
             const [expandedItems, setExpandedItems] = useState({});
+            const [currentDate, setCurrentDate] = useState(new Date());
             
             // Form States
             const [formData, setFormData] = useState({ name: "", category: "Kamera", quantity: 1 });
             const [jobFormData, setJobFormData] = useState({ name: "", date: "", items: [] });
             const [newCatName, setNewCatName] = useState("");
 
-            // Calendar Helper
-            const [currentDate, setCurrentDate] = useState(new Date());
+            // --- 1. FIREBASE INITIALISIERUNG ---
+            useEffect(() => {
+                const initCloud = async () => {
+                    while(!window.FirebaseDeps) await new Promise(r => setTimeout(r, 50));
+                    const { initializeApp, getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, getFirestore } = window.FirebaseDeps;
+                    
+                    // ====================================================================
+                    // DEINE FIREBASE CONFIG FÜR GITHUB PAGES HIER EINFÜGEN:
+                    // Wenn du die App bei GitHub hostest, tausche 'null' gegen deine Config aus.
+                    // Beispiel: const MY_FIREBASE_CONFIG = { apiKey: "AIza...", projectId: "..." };
+                    // ====================================================================
+                   const firebaseConfig = {
+  apiKey: "AIzaSyA8Dn_HK1jQc3VHJwOJP0HQSr065wVaeIY",
+  authDomain: "techpack-c0592.firebaseapp.com",
+  projectId: "techpack-c0592",
+  storageBucket: "techpack-c0592.firebasestorage.app",
+  messagingSenderId: "128861299875",
+  appId: "1:128861299875:web:7c829e0db5f0a104214b16",
+  measurementId: "G-6R5SJRJF01"
+}; 
+                    
+                    let configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+                    if (!configStr && MY_FIREBASE_CONFIG) configStr = JSON.stringify(MY_FIREBASE_CONFIG);
+                    
+                    if (!configStr) {
+                        setSyncStatus('no-config');
+                        setCategories(['Kamera', 'Audio', 'Licht', 'Zubehör']); // Fallback
+                        setIsDataLoaded(true);
+                        return;
+                    }
 
+                    try {
+                        const config = JSON.parse(configStr);
+                        const app = initializeApp(config);
+                        const auth = getAuth(app);
+                        window.db = getFirestore(app);
+                        window.appId = typeof __app_id !== 'undefined' ? __app_id : 'techpack-pro';
+
+                        // Anonymes Login für Cross-Device (In der echten Welt würde man hier Google Auth nutzen)
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+
+                        onAuthStateChanged(auth, (u) => {
+                            setUser(u);
+                            setCloudReady(!!u);
+                            if(!u) setSyncStatus('error');
+                        });
+                    } catch(e) {
+                        console.error("Cloud Init Error:", e);
+                        setSyncStatus('error');
+                    }
+                };
+                initCloud();
+            }, []);
+
+            // --- 2. DATEN AUS DER CLOUD LADEN ---
+            useEffect(() => {
+                if (!cloudReady || !user || !window.db) return;
+                const { doc, onSnapshot, setDoc } = window.FirebaseDeps;
+                const docRef = doc(window.db, 'artifacts', window.appId, 'users', user.uid, 'appData', 'state');
+                
+                setSyncStatus('syncing');
+                
+                const unsub = onSnapshot(docRef, (snap) => {
+                    if (snap.exists()) {
+                        isRemoteUpdate.current = true;
+                        const data = snap.data();
+                        if (data.categories) setCategories(data.categories);
+                        if (data.inventory) setInventory(data.inventory);
+                        if (data.jobs) setJobs(data.jobs);
+                        setSyncStatus('synced');
+                        setTimeout(() => { isRemoteUpdate.current = false; }, 100);
+                    } else {
+                        // Neue Datenbank initialisieren
+                        const initialData = {
+                            categories: ['Kamera', 'Audio', 'Licht', 'Zubehör', 'Kabel', 'Energie'],
+                            inventory: [],
+                            jobs: []
+                        };
+                        setDoc(docRef, initialData, { merge: true });
+                    }
+                    setIsDataLoaded(true);
+                }, (err) => {
+                    console.error("Sync Error:", err);
+                    setSyncStatus('error');
+                    setIsDataLoaded(true);
+                });
+                
+                return () => unsub();
+            }, [cloudReady, user]);
+
+            // --- 3. DATEN IN DIE CLOUD SPEICHERN ---
+            useEffect(() => {
+                // Nicht speichern, wenn wir gerade erst laden oder Updates reinbekommen
+                if (!cloudReady || !user || !window.db || !isDataLoaded || isRemoteUpdate.current) return;
+                
+                const saveTimer = setTimeout(() => {
+                    setSyncStatus('syncing');
+                    const { doc, setDoc } = window.FirebaseDeps;
+                    const docRef = doc(window.db, 'artifacts', window.appId, 'users', user.uid, 'appData', 'state');
+                    
+                    setDoc(docRef, { categories, inventory, jobs }, { merge: true })
+                        .then(() => setSyncStatus('synced'))
+                        .catch(() => setSyncStatus('error'));
+                }, 500); // Debounce (verhindert zu viele Speichervorgänge gleichzeitig)
+                
+                return () => clearTimeout(saveTimer);
+            }, [categories, inventory, jobs, cloudReady, user, isDataLoaded]);
+
+            // --- APP LOGIK ---
             const activeJob = useMemo(() => jobs.find(j => j.id === activeJobId), [jobs, activeJobId]);
             const usageStats = useMemo(() => {
                 const stats = {};
@@ -73,7 +209,6 @@
                 return stats;
             }, [jobs, inventory]);
 
-            // --- LAGER FUNKTIONEN ---
             const saveInventoryItem = (e) => {
                 e.preventDefault();
                 if (editingItem) {
@@ -82,7 +217,7 @@
                 } else {
                     setInventory([...inventory, { id: `inv-${Date.now()}`, ...formData, accessories: [] }]);
                 }
-                setFormData({ name: "", category: categories[0] || "Allgemein", quantity: 1 });
+                setFormData({ name: "", category: categories[0] || "Sonstiges", quantity: 1 });
                 setShowAddModal(false);
             };
 
@@ -93,32 +228,72 @@
                 }
             };
 
-            const deleteCategory = (cat) => {
-                setCategories(categories.filter(c => c !== cat));
+            const createJob = (e) => {
+                e.preventDefault();
+                if (!jobFormData.name || jobFormData.items.length === 0) return;
+                
+                const pStatus = {};
+                const aStatus = {};
+                jobFormData.items.forEach(invId => {
+                    pStatus[invId] = 'fehlt';
+                    const invItem = inventory.find(i => i.id === invId);
+                    if (invItem && invItem.accessories) {
+                        aStatus[invId] = {};
+                        invItem.accessories.forEach(acc => { aStatus[invId][acc.id] = 'fehlt'; });
+                    }
+                });
+
+                setJobs([...jobs, {
+                    id: `job-${Date.now()}`,
+                    name: jobFormData.name,
+                    date: jobFormData.date || new Date().toISOString().split('T')[0],
+                    selectedItemIds: jobFormData.items,
+                    packingStatus: pStatus,
+                    accessoryStatus: aStatus
+                }]);
+                setJobFormData({ name: "", date: "", items: [] });
+                setShowAddModal(false);
             };
 
-            // --- KALENDER LOGIK ---
+            const togglePackingStatus = (jobId, itemId) => {
+                setJobs(jobs.map(job => {
+                    if (job.id === jobId) {
+                        const order = ["fehlt", "gepackt", "im-einsatz"];
+                        const current = job.packingStatus[itemId] || "fehlt";
+                        const nextIdx = (order.indexOf(current) + 1) % order.length;
+                        return { ...job, packingStatus: { ...job.packingStatus, [itemId]: order[nextIdx] } };
+                    }
+                    return job;
+                }));
+            };
+
+            const toggleAccStatus = (jobId, itemId, accId) => {
+                setJobs(jobs.map(job => {
+                    if (job.id === jobId) {
+                        const current = job.accessoryStatus[itemId]?.[accId] || "fehlt";
+                        return { ...job, accessoryStatus: { ...job.accessoryStatus, [itemId]: { ...job.accessoryStatus[itemId], [accId]: current === 'gepackt' ? 'fehlt' : 'gepackt' } } };
+                    }
+                    return job;
+                }));
+            };
+
             const calendarDays = useMemo(() => {
                 const year = currentDate.getFullYear();
                 const month = currentDate.getMonth();
                 const firstDay = new Date(year, month, 1).getDay();
                 const daysInMonth = new Date(year, month + 1, 0).getDate();
-                
                 const days = [];
-                // Padding for start of month (adjust for Monday start)
                 const padding = firstDay === 0 ? 6 : firstDay - 1;
                 for (let i = 0; i < padding; i++) days.push(null);
                 for (let d = 1; d <= daysInMonth; d++) days.push(new Date(year, month, d));
                 return days;
             }, [currentDate]);
 
-            const getJobsForDate = (date) => {
-                if (!date) return [];
-                const dStr = date.toISOString().split('T')[0];
-                return jobs.filter(j => j.date === dStr);
-            };
-
             // --- RENDER ---
+            if (!isDataLoaded) {
+                return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-blue-600"><LucideIcon name="loader-2" className="animate-spin" size={40} /></div>;
+            }
+
             return (
                 <div className="min-h-screen bg-gray-50 text-slate-900 pb-32 font-sans overflow-x-hidden">
                     <header className="bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b border-slate-100 px-6 pt-12 pb-5">
@@ -126,19 +301,24 @@
                             <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
                                 <LucideIcon name="package" className="text-blue-600" /> TechPack
                             </h1>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 items-center">
+                                {/* Cloud Sync Indikator */}
+                                <div className="mr-2">
+                                    {syncStatus === 'synced' && <LucideIcon name="cloud-check" size={20} className="text-green-500" />}
+                                    {syncStatus === 'syncing' && <LucideIcon name="refresh-cw" size={18} className="text-blue-500 animate-spin" />}
+                                    {syncStatus === 'no-config' && <LucideIcon name="cloud-off" size={20} className="text-red-400" onClick={() => alert("Cloud Sync ist inaktiv. Bitte trage deine Firebase Config in den Quellcode ein, um geräteübergreifend zu speichern.")} />}
+                                    {syncStatus === 'error' && <LucideIcon name="alert-triangle" size={20} className="text-red-500" />}
+                                </div>
+
                                 <button onClick={() => setShowCategoryModal(true)} className="bg-slate-100 p-2.5 rounded-full text-slate-400">
                                     <LucideIcon name="settings" size={20} />
                                 </button>
-                                <div className="bg-slate-100 p-2.5 rounded-full text-slate-400">
-                                    <LucideIcon name="search" size={20} />
-                                </div>
                             </div>
                         </div>
                     </header>
 
                     <main className="px-4 mt-8 max-w-lg mx-auto">
-                        {activeJobId ? (
+                        {activeJobId && activeJob ? (
                             <div className="animate-in slide-in-from-right duration-300">
                                 <button onClick={() => setActiveJobId(null)} className="flex items-center gap-2 text-slate-400 font-bold text-xs uppercase mb-6">
                                     <LucideIcon name="arrow-left" size={14} /> Zurück
@@ -167,7 +347,7 @@
                                                         <p className="text-[10px] text-slate-400 font-bold uppercase">{item.category}</p>
                                                     </div>
                                                 </div>
-                                                {isExpanded && item.accessories.length > 0 && (
+                                                {isExpanded && item.accessories && item.accessories.length > 0 && (
                                                     <div className="bg-slate-50 p-4 border-t border-slate-100 space-y-2">
                                                         {item.accessories.map(acc => (
                                                             <div key={acc.id} onClick={() => toggleAccStatus(activeJob.id, invId, acc.id)} className="flex items-center gap-3 p-2 active:bg-white rounded-xl">
@@ -192,12 +372,12 @@
                                         </div>
                                         {jobs.length === 0 && <p className="text-center text-slate-300 py-10">Keine Jobs geplant.</p>}
                                         {jobs.map(job => (
-                                            <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-95 transition-all">
+                                            <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-95 transition-all cursor-pointer">
                                                 <p className="text-blue-600 text-[10px] font-black uppercase mb-1">{new Date(job.date).toLocaleDateString('de-DE')}</p>
                                                 <h3 className="text-lg font-bold mb-4">{job.name}</h3>
                                                 <div className="flex justify-between items-center">
                                                     <div className="flex -space-x-2">
-                                                        {job.selectedItemIds.slice(0, 3).map(id => <div key={id} className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-400 shadow-sm">{inventory.find(i => i.id === id)?.name.charAt(0)}</div>)}
+                                                        {job.selectedItemIds.slice(0, 3).map(id => <div key={id} className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-400 shadow-sm">{inventory.find(i => i.id === id)?.name?.charAt(0)}</div>)}
                                                     </div>
                                                     <LucideIcon name="chevron-right" className="text-slate-200" />
                                                 </div>
@@ -222,14 +402,14 @@
                                             </div>
                                             <div className="calendar-grid gap-1">
                                                 {calendarDays.map((date, i) => {
-                                                    const dateJobs = getJobsForDate(date);
+                                                    const dateJobs = date ? jobs.filter(j => j.date === date.toISOString().split('T')[0]) : [];
                                                     const isToday = date && date.toDateString() === new Date().toDateString();
                                                     return (
                                                         <div key={i} className={`aspect-square flex flex-col items-center justify-center rounded-xl text-xs relative ${!date ? '' : 'bg-slate-50'} ${isToday ? 'ring-2 ring-blue-400 font-black' : ''}`}>
                                                             {date && date.getDate()}
                                                             {dateJobs.length > 0 && <div className="absolute bottom-1 w-1 h-1 bg-blue-600 rounded-full"></div>}
                                                             {dateJobs.length > 0 && date && (
-                                                                <button onClick={() => { setActiveJobId(dateJobs[0].id); }} className="absolute inset-0 opacity-0 w-full h-full"></button>
+                                                                <button onClick={() => { setActiveJobId(dateJobs[0].id); }} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"></button>
                                                             )}
                                                         </div>
                                                     );
@@ -240,7 +420,7 @@
                                         <div className="space-y-2 mt-4">
                                             <h3 className="text-xs font-bold text-slate-400 uppercase ml-2">Jobs in diesem Monat</h3>
                                             {jobs.filter(j => new Date(j.date).getMonth() === currentDate.getMonth()).map(j => (
-                                                <div key={j.id} onClick={() => setActiveJobId(j.id)} className="bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-100 shadow-sm">
+                                                <div key={j.id} onClick={() => setActiveJobId(j.id)} className="bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-100 shadow-sm cursor-pointer">
                                                     <div className="flex items-center gap-3">
                                                         <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
                                                         <span className="font-bold text-sm">{j.name}</span>
@@ -248,6 +428,7 @@
                                                     <span className="text-[10px] font-bold text-slate-400">{new Date(j.date).toLocaleDateString('de-DE')}</span>
                                                 </div>
                                             ))}
+                                            {jobs.filter(j => new Date(j.date).getMonth() === currentDate.getMonth()).length === 0 && <p className="text-xs text-slate-300 ml-2">Keine Jobs</p>}
                                         </div>
                                     </div>
                                 )}
@@ -258,6 +439,7 @@
                                             <h2 className="text-xl font-bold">Lager</h2>
                                             <button onClick={() => {setEditingItem(null); setFormData({name: "", category: categories[0] || "Sonstiges", quantity: 1}); setShowAddModal(true);}} className="bg-blue-600 text-white p-2 rounded-xl"><LucideIcon name="plus" /></button>
                                         </div>
+                                        {inventory.length === 0 && <p className="text-center text-slate-300 py-10">Lager ist leer.</p>}
                                         {inventory.map(item => (
                                             <div key={item.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 flex flex-col gap-4 shadow-sm relative">
                                                 <div className="flex justify-between items-center">
@@ -286,7 +468,7 @@
                                     <div className="space-y-6">
                                         <h2 className="text-xl font-bold px-2">Statistik</h2>
                                         <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
-                                            <h3 className="font-bold mb-4">Top 5 Equipment</h3>
+                                            <h3 className="font-bold mb-4">Top Equipment</h3>
                                             <div className="space-y-4">
                                                 {inventory.sort((a,b) => usageStats[b.id] - usageStats[a.id]).slice(0, 5).map(item => (
                                                     <div key={item.id}>
@@ -299,6 +481,7 @@
                                                         </div>
                                                     </div>
                                                 ))}
+                                                {inventory.length === 0 && <p className="text-xs text-slate-300">Keine Daten</p>}
                                             </div>
                                         </div>
                                     </div>
@@ -392,7 +575,7 @@
                                                     <div key={item.id} onClick={() => {
                                                         const items = jobFormData.items.includes(item.id) ? jobFormData.items.filter(id => id !== item.id) : [...jobFormData.items, item.id];
                                                         setJobFormData({...jobFormData, items});
-                                                    }} className={`p-4 rounded-2xl border flex justify-between items-center transition-all ${jobFormData.items.includes(item.id) ? 'bg-blue-50 border-blue-200 text-blue-700 shadow-sm' : 'bg-slate-50 border-transparent text-slate-400'}`}>
+                                                    }} className={`p-4 rounded-2xl border flex justify-between items-center transition-all cursor-pointer ${jobFormData.items.includes(item.id) ? 'bg-blue-50 border-blue-200 text-blue-700 shadow-sm' : 'bg-slate-50 border-transparent text-slate-400'}`}>
                                                         <div className="flex flex-col">
                                                             <span className="font-bold text-sm">{item.name}</span>
                                                             <span className="text-[9px] font-black uppercase opacity-50">{item.category}</span>
