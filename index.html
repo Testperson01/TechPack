@@ -91,7 +91,21 @@
             // --- 1. FIREBASE INITIALISIERUNG ---
             useEffect(() => {
                 const initCloud = async () => {
-                    while(!window.FirebaseDeps) await new Promise(r => setTimeout(r, 50));
+                    // TIMEOUT-FIX: Maximal 3 Sekunden warten, ob die Skripte laden (Adblocker-Schutz)
+                    let attempts = 0;
+                    while(!window.FirebaseDeps && attempts < 60) { 
+                        await new Promise(r => setTimeout(r, 50));
+                        attempts++;
+                    }
+
+                    if (!window.FirebaseDeps) {
+                        console.error("Firebase SDK konnte nicht geladen werden (Timeout).");
+                        setSyncStatus('error');
+                        setCategories(['Kamera', 'Audio', 'Licht', 'Zubehör', 'Kabel', 'Energie']);
+                        setIsDataLoaded(true); // Ladekreis beenden
+                        return;
+                    }
+
                     const { initializeApp, getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, getFirestore } = window.FirebaseDeps;
                     
                     // ====================================================================
@@ -99,7 +113,7 @@
                     // Wenn du die App bei GitHub hostest, tausche 'null' gegen deine Config aus.
                     // Beispiel: const MY_FIREBASE_CONFIG = { apiKey: "AIza...", projectId: "..." };
                     // ====================================================================
-                   const MY_FIREBASE_CONFIG = {
+                                const MY_FIREBASE_CONFIG = {
   apiKey: "AIzaSyA8Dn_HK1jQc3VHJwOJP0HQSr065wVaeIY",
   authDomain: "techpack-c0592.firebaseapp.com",
   projectId: "techpack-c0592",
@@ -107,14 +121,14 @@
   messagingSenderId: "128861299875",
   appId: "1:128861299875:web:7c829e0db5f0a104214b16",
   measurementId: "G-6R5SJRJF01"
-}; 
+};  
                     
                     let configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
                     if (!configStr && MY_FIREBASE_CONFIG) configStr = JSON.stringify(MY_FIREBASE_CONFIG);
                     
                     if (!configStr) {
                         setSyncStatus('no-config');
-                        setCategories(['Kamera', 'Audio', 'Licht', 'Zubehör']); // Fallback
+                        setCategories(['Kamera', 'Audio', 'Licht', 'Zubehör', 'Kabel', 'Energie']); // Fallback
                         setIsDataLoaded(true);
                         return;
                     }
@@ -126,7 +140,7 @@
                         window.db = getFirestore(app);
                         window.appId = typeof __app_id !== 'undefined' ? __app_id : 'techpack-pro';
 
-                        // Anonymes Login für Cross-Device (In der echten Welt würde man hier Google Auth nutzen)
+                        // Anonymes Login für Cross-Device
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await signInWithCustomToken(auth, __initial_auth_token);
                         } else {
@@ -136,11 +150,16 @@
                         onAuthStateChanged(auth, (u) => {
                             setUser(u);
                             setCloudReady(!!u);
-                            if(!u) setSyncStatus('error');
+                            if(!u) {
+                                setSyncStatus('error');
+                                setIsDataLoaded(true); // Ladekreis beenden bei Auth-Fehler
+                            }
                         });
                     } catch(e) {
                         console.error("Cloud Init Error:", e);
                         setSyncStatus('error');
+                        setCategories(['Kamera', 'Audio', 'Licht', 'Zubehör', 'Kabel', 'Energie']);
+                        setIsDataLoaded(true); // Ladekreis beenden bei Absturz
                     }
                 };
                 initCloud();
@@ -172,11 +191,11 @@
                         };
                         setDoc(docRef, initialData, { merge: true });
                     }
-                    setIsDataLoaded(true);
+                    setIsDataLoaded(true); // Ladekreis beenden nach erfolgreichem Abruf
                 }, (err) => {
                     console.error("Sync Error:", err);
                     setSyncStatus('error');
-                    setIsDataLoaded(true);
+                    setIsDataLoaded(true); // Ladekreis beenden bei Datenbankfehler
                 });
                 
                 return () => unsub();
@@ -291,7 +310,12 @@
 
             // --- RENDER ---
             if (!isDataLoaded) {
-                return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-blue-600"><LucideIcon name="loader-2" className="animate-spin" size={40} /></div>;
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-blue-600">
+                        <LucideIcon name="loader-2" className="animate-spin mb-4" size={40} />
+                        <p className="text-sm font-bold text-slate-400">Verbinde mit TechPack...</p>
+                    </div>
+                );
             }
 
             return (
@@ -306,8 +330,8 @@
                                 <div className="mr-2">
                                     {syncStatus === 'synced' && <LucideIcon name="cloud-check" size={20} className="text-green-500" />}
                                     {syncStatus === 'syncing' && <LucideIcon name="refresh-cw" size={18} className="text-blue-500 animate-spin" />}
-                                    {syncStatus === 'no-config' && <LucideIcon name="cloud-off" size={20} className="text-red-400" onClick={() => alert("Cloud Sync ist inaktiv. Bitte trage deine Firebase Config in den Quellcode ein, um geräteübergreifend zu speichern.")} />}
-                                    {syncStatus === 'error' && <LucideIcon name="alert-triangle" size={20} className="text-red-500" />}
+                                    {syncStatus === 'no-config' && <LucideIcon name="cloud-off" size={20} className="text-slate-400" onClick={() => alert("Cloud Sync ist inaktiv. Bitte trage deine Firebase Config in den Quellcode ein, um geräteübergreifend zu speichern.")} />}
+                                    {syncStatus === 'error' && <LucideIcon name="alert-triangle" size={20} className="text-red-500" onClick={() => alert("Fehler bei der Verbindung zur Cloud. Prüfe deine Internetverbindung oder Firebase-Einstellungen.")} />}
                                 </div>
 
                                 <button onClick={() => setShowCategoryModal(true)} className="bg-slate-100 p-2.5 rounded-full text-slate-400">
