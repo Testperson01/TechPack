@@ -83,6 +83,20 @@
                 }
             }, [isDarkMode]);
 
+            // --- SYNC CODE STATE (GERÄTE KOPPELN) ---
+            const [syncCode, setSyncCode] = useState(() => {
+                if (typeof window !== 'undefined') {
+                    const saved = localStorage.getItem('techpack_sync_code');
+                    if (saved) return saved;
+                    // Generiere einen zufälligen 6-stelligen Code
+                    const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+                    localStorage.setItem('techpack_sync_code', newCode);
+                    return newCode;
+                }
+                return "SYNC00";
+            });
+            const [tempSyncCode, setTempSyncCode] = useState('');
+
             // --- CLOUD SYNC STATE ---
             const [user, setUser] = useState(null);
             const [cloudReady, setCloudReady] = useState(false);
@@ -199,7 +213,9 @@
             useEffect(() => {
                 if (!cloudReady || !user || !window.db) return;
                 const { doc, onSnapshot, setDoc } = window.FirebaseDeps;
-                const docRef = doc(window.db, 'artifacts', window.appId, 'users', user.uid, 'appData', 'state');
+                
+                // HIER IST DIE MAGIE: Wir nutzen den Sync-Code für den Pfad in der Datenbank!
+                const docRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'techpack_sync', syncCode);
                 
                 setSyncStatus('syncing');
                 
@@ -210,7 +226,7 @@
                         if (data.categories) setCategories(data.categories);
                         if (data.inventory) setInventory(data.inventory);
                         
-                        // Jobs Migration (Alte Arrays in Objekte umwandeln & Dates anpassen)
+                        // Jobs Migration
                         if (data.jobs) {
                             const migratedJobs = data.jobs.map(j => {
                                 let start = j.startDate || j.date || todayStr;
@@ -233,17 +249,24 @@
                                 return { ...j, startDate: start, endDate: end, selectedItemIds: newSelected || {}, packingStatus: newPacking };
                             });
                             setJobs(migratedJobs);
+                        } else {
+                            setJobs([]);
                         }
                         
                         setSyncStatus('synced');
                         setTimeout(() => { isRemoteUpdate.current = false; }, 100);
                     } else {
+                        // Wenn der Code neu ist, initialisieren wir eine leere Struktur
                         const initialData = {
                             categories: DEFAULT_CATEGORIES,
                             inventory: [],
                             jobs: []
                         };
                         setDoc(docRef, initialData, { merge: true });
+                        // Setze auch den lokalen State zurück, falls wir den Code wechseln
+                        setCategories(DEFAULT_CATEGORIES);
+                        setInventory([]);
+                        setJobs([]);
                     }
                     setIsDataLoaded(true);
                 }, (err) => {
@@ -252,7 +275,7 @@
                 });
                 
                 return () => unsub();
-            }, [cloudReady, user]);
+            }, [cloudReady, user, syncCode]); // WICHTIG: Aktualisieren, wenn sich der syncCode ändert!
 
             // --- 3. DATEN IN DIE CLOUD SPEICHERN ---
             useEffect(() => {
@@ -261,7 +284,8 @@
                 const saveTimer = setTimeout(() => {
                     setSyncStatus('syncing');
                     const { doc, setDoc } = window.FirebaseDeps;
-                    const docRef = doc(window.db, 'artifacts', window.appId, 'users', user.uid, 'appData', 'state');
+                    // Daten immer unter dem aktuellen Sync-Code speichern
+                    const docRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'techpack_sync', syncCode);
                     
                     setDoc(docRef, { categories, inventory, jobs }, { merge: true })
                         .then(() => setSyncStatus('synced'))
@@ -269,7 +293,7 @@
                 }, 500);
                 
                 return () => clearTimeout(saveTimer);
-            }, [categories, inventory, jobs, cloudReady, user, isDataLoaded]);
+            }, [categories, inventory, jobs, cloudReady, user, isDataLoaded, syncCode]);
 
             // --- APP LOGIK & HILFSFUNKTIONEN ---
             const activeJob = useMemo(() => jobs.find(j => j.id === activeJobId), [jobs, activeJobId]);
@@ -290,7 +314,6 @@
                 if (!item || item.isBundle) return 0;
                 let used = 0;
                 jobs.forEach(j => {
-                    // Überlappungs-Prüfung
                     if (j.startDate <= endStr && j.endDate >= startStr) {
                         if (j.selectedItemIds[itemId]) {
                             used += j.selectedItemIds[itemId];
@@ -300,7 +323,6 @@
                 return Math.max(0, item.quantity - used);
             };
 
-            // Kategorien gruppieren
             const groupedInventoryLager = useMemo(() => {
                 const grouped = { 'Bundles': { items: inventory.filter(i => i.isBundle), subs: {} } };
                 
@@ -363,7 +385,6 @@
                 });
             };
 
-            // --- AKTIONEN ---
             const saveInventoryItem = (e) => {
                 e.preventDefault();
                 const isBndl = itemType === 'bundle';
@@ -406,7 +427,6 @@
                 Object.entries(bundleItem.bundleItems || {}).forEach(([bId, bQty]) => {
                     const available = getAvailableQty(bId, jobFormData.startDate, jobFormData.endDate);
                     const currentSelected = newItems[bId] || 0;
-                    // Füge nur so viel hinzu, wie maximal verfügbar ist
                     newItems[bId] = Math.min(available, currentSelected + bQty);
                 });
                 setJobFormData({ ...jobFormData, items: newItems });
@@ -501,7 +521,6 @@
                 return jobs.filter(j => j.startDate <= dStr && j.endDate >= dStr);
             };
 
-            // Initiales Aufklappen aller Kategorien
             useEffect(() => {
                 if (categories.length > 0 && Object.keys(expandedCatsLager).length === 0) {
                     const initExpanded = { 'Bundles': true, 'Sonstiges': true };
@@ -511,7 +530,6 @@
                 }
             }, [categories]);
 
-            // --- PROGRESS BERECHNUNG ---
             let totalRequiredQty = 0;
             let totalPackedQty = 0;
             if (activeJob) {
@@ -523,7 +541,6 @@
             }
             const progressPercent = totalRequiredQty > 0 ? Math.round((totalPackedQty / totalRequiredQty) * 100) : 0;
 
-            // --- RENDER ---
             if (!isDataLoaded) {
                 return (
                     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-slate-900 text-blue-600 dark:text-blue-400">
@@ -851,11 +868,51 @@
                     {/* --- CATEGORY MODAL --- */}
                     {showCategoryModal && (
                         <div className="fixed inset-0 z-[100] bg-slate-900/60 dark:bg-black/60 backdrop-blur-sm flex items-end justify-center transition-colors">
-                            <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-t-[3rem] p-8 animate-in slide-in-from-bottom duration-300 shadow-2xl max-h-[80vh] overflow-y-auto transition-colors">
+                            <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-t-[3rem] p-8 animate-in slide-in-from-bottom duration-300 shadow-2xl max-h-[85vh] overflow-y-auto transition-colors">
                                 <div className="flex justify-between mb-8 items-center">
-                                    <h2 className="text-2xl font-black">Kategorien verwalten</h2>
+                                    <h2 className="text-2xl font-black">Einstellungen</h2>
                                     <button onClick={() => setShowCategoryModal(false)}><LucideIcon name="x" className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300" /></button>
                                 </div>
+
+                                {/* --- SYNC CODE SECTION --- */}
+                                <div className="mb-8 p-5 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-800">
+                                    <h3 className="text-sm font-black text-blue-800 dark:text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                        <LucideIcon name="smartphone-nfc" size={16}/> Geräte koppeln
+                                    </h3>
+                                    <p className="text-xs text-blue-600 dark:text-blue-300 mb-4 leading-relaxed">
+                                        Damit du deine Daten auf dem Handy siehst, gib diesen Code dort ein:
+                                    </p>
+                                    <div className="flex items-center justify-center bg-white dark:bg-slate-800 py-3 rounded-xl border border-blue-200 dark:border-blue-700 mb-4 shadow-inner">
+                                        <span className="text-2xl font-black tracking-[0.2em] text-slate-800 dark:text-white">{syncCode}</span>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input 
+                                            className="flex-1 bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-700 rounded-xl p-3 font-bold outline-none text-sm dark:text-white uppercase text-center placeholder-slate-400" 
+                                            placeholder="CODE..." 
+                                            value={tempSyncCode} 
+                                            onChange={e => setTempSyncCode(e.target.value.toUpperCase())}
+                                            maxLength={6}
+                                        />
+                                        <button 
+                                            onClick={() => {
+                                                if(tempSyncCode.length === 6) {
+                                                    setSyncCode(tempSyncCode);
+                                                    localStorage.setItem('techpack_sync_code', tempSyncCode);
+                                                    setTempSyncCode('');
+                                                    setDialog({ type: 'alert', message: 'Geräte erfolgreich gekoppelt! Lade Daten...' });
+                                                } else {
+                                                    setDialog({ type: 'alert', message: 'Der Code muss genau 6 Zeichen lang sein.' });
+                                                }
+                                            }} 
+                                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-xl transition-colors font-bold text-sm"
+                                        >
+                                            Verbinden
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* --- CATEGORIES SECTION --- */}
+                                <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest mb-4">Kategorien</h3>
                                 <div className="space-y-4 mb-8">
                                     {(() => {
                                         const catHierarchy = {};
