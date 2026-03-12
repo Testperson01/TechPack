@@ -39,15 +39,10 @@
             
             useEffect(() => {
                 if (iconRef.current && window.lucide) {
-                    // Setzt das Icon-Tag zurück, damit lucide es frisch generieren kann
                     iconRef.current.innerHTML = `<i data-lucide="${name}"></i>`;
                     window.lucide.createIcons({ 
                         root: iconRef.current,
-                        attrs: {
-                            width: size,
-                            height: size,
-                            'stroke-width': strokeWidth
-                        }
+                        attrs: { width: size, height: size, 'stroke-width': strokeWidth }
                     });
                 }
             }, [name, size, strokeWidth]);
@@ -66,7 +61,7 @@
             // --- CLOUD SYNC STATE ---
             const [user, setUser] = useState(null);
             const [cloudReady, setCloudReady] = useState(false);
-            const [syncStatus, setSyncStatus] = useState('connecting'); // connecting, synced, syncing, no-config, error
+            const [syncStatus, setSyncStatus] = useState('connecting'); 
             const [isDataLoaded, setIsDataLoaded] = useState(false);
             const isRemoteUpdate = useRef(false);
 
@@ -81,17 +76,42 @@
             const [showCategoryModal, setShowCategoryModal] = useState(false);
             const [editingItem, setEditingItem] = useState(null);
             const [expandedItems, setExpandedItems] = useState({});
+            
+            // Aufklapp-Status für Kategorien im Lager und im Planer
+            const [expandedCatsLager, setExpandedCatsLager] = useState({});
+            const [expandedCatsPlaner, setExpandedCatsPlaner] = useState({});
+
             const [currentDate, setCurrentDate] = useState(new Date());
+            const [dialog, setDialog] = useState(null);
             
             // Form States
-            const [formData, setFormData] = useState({ name: "", category: "Kamera", quantity: 1 });
-            const [jobFormData, setJobFormData] = useState({ name: "", date: "", items: [] });
+            const [itemType, setItemType] = useState('item'); // 'item' oder 'bundle'
+            const [formData, setFormData] = useState({ name: "", category: "Kamera", quantity: 1, bundleItems: {} });
+            
+            const todayStr = new Date().toISOString().split('T')[0];
+            const [jobFormData, setJobFormData] = useState({ name: "", startDate: todayStr, endDate: todayStr, items: {} });
             const [newCatName, setNewCatName] = useState("");
+            const [newCatParent, setNewCatParent] = useState(""); // NEU: Parent-Category State
+
+            // --- STANDARD KATEGORIEN ---
+            const DEFAULT_CATEGORIES = [
+                'Kamera', 
+                'Audio', 
+                'Licht', 
+                'Zubehör', 
+                'Kabel', 
+                'Kabel - Fokus', 
+                'Kabel - Video', 
+                'Kabel - Strom', 
+                'Kabel - Audio', 
+                'Energie', 
+                'Grip', 
+                'Grip - Stative'
+            ];
 
             // --- 1. FIREBASE INITIALISIERUNG ---
             useEffect(() => {
                 const initCloud = async () => {
-                    // TIMEOUT-FIX: Maximal 3 Sekunden warten, ob die Skripte laden (Adblocker-Schutz)
                     let attempts = 0;
                     while(!window.FirebaseDeps && attempts < 60) { 
                         await new Promise(r => setTimeout(r, 50));
@@ -99,36 +119,30 @@
                     }
 
                     if (!window.FirebaseDeps) {
-                        console.error("Firebase SDK konnte nicht geladen werden (Timeout).");
                         setSyncStatus('error');
-                        setCategories(['Kamera', 'Audio', 'Licht', 'Zubehör', 'Kabel', 'Energie']);
-                        setIsDataLoaded(true); // Ladekreis beenden
+                        setCategories(DEFAULT_CATEGORIES);
+                        setIsDataLoaded(true);
                         return;
                     }
 
                     const { initializeApp, getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, getFirestore } = window.FirebaseDeps;
                     
-                    // ====================================================================
-                    // DEINE FIREBASE CONFIG FÜR GITHUB PAGES HIER EINFÜGEN:
-                    // Wenn du die App bei GitHub hostest, tausche 'null' gegen deine Config aus.
-                    // Beispiel: const MY_FIREBASE_CONFIG = { apiKey: "AIza...", projectId: "..." };
-                    // ====================================================================
-                                const MY_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyA8Dn_HK1jQc3VHJwOJP0HQSr065wVaeIY",
-  authDomain: "techpack-c0592.firebaseapp.com",
-  projectId: "techpack-c0592",
-  storageBucket: "techpack-c0592.firebasestorage.app",
-  messagingSenderId: "128861299875",
-  appId: "1:128861299875:web:7c829e0db5f0a104214b16",
-  measurementId: "G-6R5SJRJF01"
-};  
+                    const MY_FIREBASE_CONFIG = {
+                      apiKey: "AIzaSyA8Dn_HK1jQc3VHJwOJP0HQSr065wVaeIY",
+                      authDomain: "techpack-c0592.firebaseapp.com",
+                      projectId: "techpack-c0592",
+                      storageBucket: "techpack-c0592.firebasestorage.app",
+                      messagingSenderId: "128861299875",
+                      appId: "1:128861299875:web:7c829e0db5f0a104214b16",
+                      measurementId: "G-6R5SJRJF01"
+                    };  
                     
                     let configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
                     if (!configStr && MY_FIREBASE_CONFIG) configStr = JSON.stringify(MY_FIREBASE_CONFIG);
                     
                     if (!configStr) {
                         setSyncStatus('no-config');
-                        setCategories(['Kamera', 'Audio', 'Licht', 'Zubehör', 'Kabel', 'Energie']); // Fallback
+                        setCategories(DEFAULT_CATEGORIES);
                         setIsDataLoaded(true);
                         return;
                     }
@@ -140,7 +154,6 @@
                         window.db = getFirestore(app);
                         window.appId = typeof __app_id !== 'undefined' ? __app_id : 'techpack-pro';
 
-                        // Anonymes Login für Cross-Device
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await signInWithCustomToken(auth, __initial_auth_token);
                         } else {
@@ -152,14 +165,13 @@
                             setCloudReady(!!u);
                             if(!u) {
                                 setSyncStatus('error');
-                                setIsDataLoaded(true); // Ladekreis beenden bei Auth-Fehler
+                                setIsDataLoaded(true);
                             }
                         });
                     } catch(e) {
-                        console.error("Cloud Init Error:", e);
                         setSyncStatus('error');
-                        setCategories(['Kamera', 'Audio', 'Licht', 'Zubehör', 'Kabel', 'Energie']);
-                        setIsDataLoaded(true); // Ladekreis beenden bei Absturz
+                        setCategories(DEFAULT_CATEGORIES);
+                        setIsDataLoaded(true);
                     }
                 };
                 initCloud();
@@ -179,23 +191,46 @@
                         const data = snap.data();
                         if (data.categories) setCategories(data.categories);
                         if (data.inventory) setInventory(data.inventory);
-                        if (data.jobs) setJobs(data.jobs);
+                        
+                        // Jobs Migration (Alte Arrays in Objekte umwandeln & Dates anpassen)
+                        if (data.jobs) {
+                            const migratedJobs = data.jobs.map(j => {
+                                let start = j.startDate || j.date || todayStr;
+                                let end = j.endDate || j.date || todayStr;
+                                
+                                let newSelected = j.selectedItemIds;
+                                if (Array.isArray(newSelected)) {
+                                    newSelected = {};
+                                    j.selectedItemIds.forEach(id => newSelected[id] = 1);
+                                }
+
+                                let newPacking = j.packingStatus || {};
+                                Object.keys(newPacking).forEach(id => {
+                                    if (typeof newPacking[id] === 'string') {
+                                        const qty = newSelected[id] || 1;
+                                        newPacking[id] = { packed: (newPacking[id] === 'gepackt' || newPacking[id] === 'im-einsatz') ? qty : 0, status: newPacking[id] };
+                                    }
+                                });
+
+                                return { ...j, startDate: start, endDate: end, selectedItemIds: newSelected || {}, packingStatus: newPacking };
+                            });
+                            setJobs(migratedJobs);
+                        }
+                        
                         setSyncStatus('synced');
                         setTimeout(() => { isRemoteUpdate.current = false; }, 100);
                     } else {
-                        // Neue Datenbank initialisieren
                         const initialData = {
-                            categories: ['Kamera', 'Audio', 'Licht', 'Zubehör', 'Kabel', 'Energie'],
+                            categories: DEFAULT_CATEGORIES,
                             inventory: [],
                             jobs: []
                         };
                         setDoc(docRef, initialData, { merge: true });
                     }
-                    setIsDataLoaded(true); // Ladekreis beenden nach erfolgreichem Abruf
+                    setIsDataLoaded(true);
                 }, (err) => {
-                    console.error("Sync Error:", err);
                     setSyncStatus('error');
-                    setIsDataLoaded(true); // Ladekreis beenden bei Datenbankfehler
+                    setIsDataLoaded(true);
                 });
                 
                 return () => unsub();
@@ -203,7 +238,6 @@
 
             // --- 3. DATEN IN DIE CLOUD SPEICHERN ---
             useEffect(() => {
-                // Nicht speichern, wenn wir gerade erst laden oder Updates reinbekommen
                 if (!cloudReady || !user || !window.db || !isDataLoaded || isRemoteUpdate.current) return;
                 
                 const saveTimer = setTimeout(() => {
@@ -214,47 +248,160 @@
                     setDoc(docRef, { categories, inventory, jobs }, { merge: true })
                         .then(() => setSyncStatus('synced'))
                         .catch(() => setSyncStatus('error'));
-                }, 500); // Debounce (verhindert zu viele Speichervorgänge gleichzeitig)
+                }, 500);
                 
                 return () => clearTimeout(saveTimer);
             }, [categories, inventory, jobs, cloudReady, user, isDataLoaded]);
 
-            // --- APP LOGIK ---
+            // --- APP LOGIK & HILFSFUNKTIONEN ---
             const activeJob = useMemo(() => jobs.find(j => j.id === activeJobId), [jobs, activeJobId]);
+            
             const usageStats = useMemo(() => {
                 const stats = {};
                 inventory.forEach(item => stats[item.id] = 0);
-                jobs.forEach(job => job.selectedItemIds.forEach(id => { if (stats[id] !== undefined) stats[id]++; }));
+                jobs.forEach(job => {
+                    Object.entries(job.selectedItemIds || {}).forEach(([id, qty]) => {
+                        if (stats[id] !== undefined) stats[id] += qty;
+                    });
+                });
                 return stats;
             }, [jobs, inventory]);
 
+            const getAvailableQty = (itemId, startStr, endStr) => {
+                const item = inventory.find(i => i.id === itemId);
+                if (!item || item.isBundle) return 0;
+                let used = 0;
+                jobs.forEach(j => {
+                    // Überlappungs-Prüfung
+                    if (j.startDate <= endStr && j.endDate >= startStr) {
+                        if (j.selectedItemIds[itemId]) {
+                            used += j.selectedItemIds[itemId];
+                        }
+                    }
+                });
+                return Math.max(0, item.quantity - used);
+            };
+
+            // Kategorien gruppieren
+            const groupedInventoryLager = useMemo(() => {
+                const grouped = { 'Bundles': { items: inventory.filter(i => i.isBundle), subs: {} } };
+                
+                categories.forEach(cat => {
+                    const parts = cat.split(' - ');
+                    const main = parts[0];
+                    if (!grouped[main]) grouped[main] = { items: [], subs: {} };
+                    if (parts.length > 1) {
+                        const sub = parts[1];
+                        if (!grouped[main].subs[sub]) grouped[main].subs[sub] = [];
+                    }
+                });
+
+                inventory.forEach(item => {
+                    if (item.isBundle) return;
+                    const cat = item.category || 'Sonstiges';
+                    const parts = cat.split(' - ');
+                    const main = parts[0];
+                    const sub = parts[1];
+
+                    if (!grouped[main]) grouped[main] = { items: [], subs: {} };
+
+                    if (sub) {
+                        if (!grouped[main].subs[sub]) grouped[main].subs[sub] = [];
+                        grouped[main].subs[sub].push(item);
+                    } else {
+                        grouped[main].items.push(item);
+                    }
+                });
+
+                const sonstiges = inventory.filter(i => !i.isBundle && !categories.includes(i.category) && !i.category?.includes(' - '));
+                if (sonstiges.length > 0) grouped['Sonstiges'] = { items: sonstiges, subs: {} };
+                
+                return grouped;
+            }, [inventory, categories]);
+
+            const toggleCatLager = (cat) => setExpandedCatsLager(prev => ({...prev, [cat]: !prev[cat]}));
+            const toggleCatPlaner = (cat) => setExpandedCatsPlaner(prev => ({...prev, [cat]: !prev[cat]}));
+
+            const confirmDeleteJob = (id) => {
+                setDialog({
+                    type: 'confirm',
+                    message: 'Job wirklich löschen?',
+                    onConfirm: () => {
+                        setJobs(jobs.filter(j => j.id !== id));
+                        if(activeJobId === id) setActiveJobId(null);
+                        setDialog(null);
+                    }
+                });
+            };
+
+            const confirmDeleteItem = (id) => {
+                setDialog({
+                    type: 'confirm',
+                    message: 'Item wirklich löschen?',
+                    onConfirm: () => {
+                        setInventory(inventory.filter(i => i.id !== id));
+                        setDialog(null);
+                    }
+                });
+            };
+
+            // --- AKTIONEN ---
             const saveInventoryItem = (e) => {
                 e.preventDefault();
+                const isBndl = itemType === 'bundle';
                 if (editingItem) {
-                    setInventory(inventory.map(item => item.id === editingItem.id ? { ...item, ...formData } : item));
+                    setInventory(inventory.map(item => item.id === editingItem.id ? { ...item, ...formData, isBundle: isBndl } : item));
                     setEditingItem(null);
                 } else {
-                    setInventory([...inventory, { id: `inv-${Date.now()}`, ...formData, accessories: [] }]);
+                    setInventory([...inventory, { id: `inv-${Date.now()}`, ...formData, isBundle: isBndl, accessories: [] }]);
                 }
-                setFormData({ name: "", category: categories[0] || "Sonstiges", quantity: 1 });
+                setFormData({ name: "", category: categories[0] || "Sonstiges", quantity: 1, bundleItems: {} });
                 setShowAddModal(false);
             };
 
             const addCategory = () => {
-                if (newCatName && !categories.includes(newCatName)) {
-                    setCategories([...categories, newCatName]);
+                let fullCat = newCatName;
+                if (newCatParent) fullCat = `${newCatParent} - ${newCatName}`;
+                
+                if (fullCat && !categories.includes(fullCat)) {
+                    setCategories([...categories, fullCat]);
+                    setExpandedCatsLager(prev => ({...prev, [newCatParent || fullCat]: true}));
+                    setExpandedCatsPlaner(prev => ({...prev, [newCatParent || fullCat]: true}));
                     setNewCatName("");
+                    setNewCatParent("");
                 }
+            };
+
+            const deleteCategory = (cat) => {
+                setDialog({
+                    type: 'confirm',
+                    message: `Kategorie '${cat}' wirklich löschen? Die Artikel wandern nach 'Sonstiges'.`,
+                    onConfirm: () => {
+                        setCategories(categories.filter(c => c !== cat));
+                        setDialog(null);
+                    }
+                });
+            };
+
+            const addBundleToJob = (bundleItem) => {
+                const newItems = { ...jobFormData.items };
+                Object.entries(bundleItem.bundleItems || {}).forEach(([bId, bQty]) => {
+                    const available = getAvailableQty(bId, jobFormData.startDate, jobFormData.endDate);
+                    const currentSelected = newItems[bId] || 0;
+                    // Füge nur so viel hinzu, wie maximal verfügbar ist
+                    newItems[bId] = Math.min(available, currentSelected + bQty);
+                });
+                setJobFormData({ ...jobFormData, items: newItems });
             };
 
             const createJob = (e) => {
                 e.preventDefault();
-                if (!jobFormData.name || jobFormData.items.length === 0) return;
+                if (!jobFormData.name || Object.keys(jobFormData.items).length === 0) return;
                 
                 const pStatus = {};
                 const aStatus = {};
-                jobFormData.items.forEach(invId => {
-                    pStatus[invId] = 'fehlt';
+                Object.keys(jobFormData.items).forEach(invId => {
+                    pStatus[invId] = { packed: 0, status: 'fehlt' };
                     const invItem = inventory.find(i => i.id === invId);
                     if (invItem && invItem.accessories) {
                         aStatus[invId] = {};
@@ -262,25 +409,47 @@
                     }
                 });
 
+                if (jobFormData.startDate > jobFormData.endDate) {
+                    setDialog({ type: 'alert', message: "Das Startdatum darf nicht nach dem Enddatum liegen." });
+                    return;
+                }
+
                 setJobs([...jobs, {
                     id: `job-${Date.now()}`,
                     name: jobFormData.name,
-                    date: jobFormData.date || new Date().toISOString().split('T')[0],
+                    startDate: jobFormData.startDate,
+                    endDate: jobFormData.endDate,
                     selectedItemIds: jobFormData.items,
                     packingStatus: pStatus,
                     accessoryStatus: aStatus
                 }]);
-                setJobFormData({ name: "", date: "", items: [] });
+                setJobFormData({ name: "", startDate: todayStr, endDate: todayStr, items: {} });
                 setShowAddModal(false);
             };
 
-            const togglePackingStatus = (jobId, itemId) => {
+            const togglePackingStatus = (jobId, itemId, requiredQty) => {
                 setJobs(jobs.map(job => {
                     if (job.id === jobId) {
-                        const order = ["fehlt", "gepackt", "im-einsatz"];
-                        const current = job.packingStatus[itemId] || "fehlt";
-                        const nextIdx = (order.indexOf(current) + 1) % order.length;
-                        return { ...job, packingStatus: { ...job.packingStatus, [itemId]: order[nextIdx] } };
+                        const current = job.packingStatus[itemId] || { packed: 0, status: 'fehlt' };
+                        let nextPacked = current.packed;
+                        let nextStatus = current.status;
+
+                        if (current.status === 'fehlt' || current.status === 'teilweise') {
+                            nextPacked++;
+                            if (nextPacked >= requiredQty) {
+                                nextPacked = requiredQty;
+                                nextStatus = 'gepackt';
+                            } else {
+                                nextStatus = 'teilweise';
+                            }
+                        } else if (current.status === 'gepackt') {
+                            nextStatus = 'im-einsatz';
+                        } else {
+                            nextPacked = 0;
+                            nextStatus = 'fehlt';
+                        }
+
+                        return { ...job, packingStatus: { ...job.packingStatus, [itemId]: { packed: nextPacked, status: nextStatus } } };
                     }
                     return job;
                 }));
@@ -308,6 +477,34 @@
                 return days;
             }, [currentDate]);
 
+            const getJobsForDate = (date) => {
+                if (!date) return [];
+                const dStr = date.toISOString().split('T')[0];
+                return jobs.filter(j => j.startDate <= dStr && j.endDate >= dStr);
+            };
+
+            // Initiales Aufklappen aller Kategorien
+            useEffect(() => {
+                if (categories.length > 0 && Object.keys(expandedCatsLager).length === 0) {
+                    const initExpanded = { 'Bundles': true, 'Sonstiges': true };
+                    categories.forEach(c => initExpanded[c] = true);
+                    setExpandedCatsLager(initExpanded);
+                    setExpandedCatsPlaner(initExpanded);
+                }
+            }, [categories]);
+
+            // --- PROGRESS BERECHNUNG ---
+            let totalRequiredQty = 0;
+            let totalPackedQty = 0;
+            if (activeJob) {
+                Object.entries(activeJob.selectedItemIds).forEach(([id, reqQty]) => {
+                    totalRequiredQty += reqQty;
+                    const packed = activeJob.packingStatus[id]?.packed || 0;
+                    totalPackedQty += Math.min(packed, reqQty);
+                });
+            }
+            const progressPercent = totalRequiredQty > 0 ? Math.round((totalPackedQty / totalRequiredQty) * 100) : 0;
+
             // --- RENDER ---
             if (!isDataLoaded) {
                 return (
@@ -326,14 +523,12 @@
                                 <LucideIcon name="package" className="text-blue-600" /> TechPack
                             </h1>
                             <div className="flex gap-2 items-center">
-                                {/* Cloud Sync Indikator */}
                                 <div className="mr-2">
                                     {syncStatus === 'synced' && <LucideIcon name="cloud-check" size={20} className="text-green-500" />}
                                     {syncStatus === 'syncing' && <LucideIcon name="refresh-cw" size={18} className="text-blue-500 animate-spin" />}
-                                    {syncStatus === 'no-config' && <LucideIcon name="cloud-off" size={20} className="text-slate-400" onClick={() => alert("Cloud Sync ist inaktiv. Bitte trage deine Firebase Config in den Quellcode ein, um geräteübergreifend zu speichern.")} />}
-                                    {syncStatus === 'error' && <LucideIcon name="alert-triangle" size={20} className="text-red-500" onClick={() => alert("Fehler bei der Verbindung zur Cloud. Prüfe deine Internetverbindung oder Firebase-Einstellungen.")} />}
+                                    {syncStatus === 'no-config' && <LucideIcon name="cloud-off" size={20} className="text-slate-400" onClick={() => setDialog({ type: 'alert', message: "Cloud Sync ist inaktiv. Bitte Firebase Config ergänzen." })} />}
+                                    {syncStatus === 'error' && <LucideIcon name="alert-triangle" size={20} className="text-red-500" onClick={() => setDialog({ type: 'alert', message: "Fehler bei der Verbindung zur Cloud." })} />}
                                 </div>
-
                                 <button onClick={() => setShowCategoryModal(true)} className="bg-slate-100 p-2.5 rounded-full text-slate-400">
                                     <LucideIcon name="settings" size={20} />
                                 </button>
@@ -350,25 +545,67 @@
                                 <div className="flex justify-between items-start mb-8">
                                     <div>
                                         <h2 className="text-2xl font-black mb-1">{activeJob.name}</h2>
-                                        <p className="text-blue-600 text-sm font-bold">{new Date(activeJob.date).toLocaleDateString('de-DE')}</p>
+                                        <p className="text-blue-600 text-sm font-bold">
+                                            {new Date(activeJob.startDate).toLocaleDateString('de-DE')} 
+                                            {activeJob.startDate !== activeJob.endDate && ` - ${new Date(activeJob.endDate).toLocaleDateString('de-DE')}`}
+                                        </p>
                                     </div>
-                                    <button onClick={() => {if(confirm('Job wirklich löschen?')) {setJobs(jobs.filter(j=>j.id!==activeJob.id)); setActiveJobId(null);}}} className="text-red-400 p-2"><LucideIcon name="trash-2" size={20} /></button>
+                                    <button onClick={() => confirmDeleteJob(activeJob.id)} className="text-red-400 p-2"><LucideIcon name="trash-2" size={20} /></button>
                                 </div>
+
+                                {/* --- PROGRESS CARD --- */}
+                                <section className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2.5rem] p-7 text-white shadow-xl shadow-blue-200 mb-8">
+                                    <div className="flex justify-between items-start mb-6">
+                                        <div>
+                                            <p className="opacity-80 text-xs font-black uppercase tracking-widest mb-1">Pack-Fortschritt</p>
+                                            <h2 className="text-4xl font-black">{progressPercent}%</h2>
+                                        </div>
+                                        <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md">
+                                            <LucideIcon name="package" size={24} />
+                                        </div>
+                                    </div>
+                                    <div className="w-full bg-black/20 h-2.5 rounded-full overflow-hidden">
+                                        <div
+                                            className="bg-white h-full transition-all duration-1000 ease-out rounded-full"
+                                            style={{ width: `${progressPercent}%` }}
+                                        />
+                                    </div>
+                                    <p className="mt-5 text-[10px] font-black opacity-80 uppercase tracking-widest">
+                                        {totalPackedQty} von {totalRequiredQty} Items gepackt
+                                    </p>
+                                </section>
+
                                 <div className="space-y-4">
-                                    {activeJob.selectedItemIds.map(invId => {
+                                    {Object.entries(activeJob.selectedItemIds).map(([invId, requiredQty]) => {
                                         const item = inventory.find(i => i.id === invId);
                                         if (!item) return null;
-                                        const status = activeJob.packingStatus[invId] || "fehlt";
+                                        const packInfo = activeJob.packingStatus[invId] || { packed: 0, status: 'fehlt' };
                                         const isExpanded = expandedItems[invId];
+                                        
+                                        // Farben für den Status
+                                        const btnColor = packInfo.status === 'gepackt' ? 'bg-green-100 text-green-600' : 
+                                                         packInfo.status === 'im-einsatz' ? 'bg-purple-100 text-purple-600' : 
+                                                         packInfo.status === 'teilweise' ? 'bg-orange-100 text-orange-500' :
+                                                         'bg-slate-100 text-slate-300';
+                                        
+                                        const iconName = packInfo.status === 'gepackt' ? 'check-circle-2' : 
+                                                         packInfo.status === 'im-einsatz' ? 'zap' : 
+                                                         packInfo.status === 'teilweise' ? 'minus-circle' : 'circle';
+
                                         return (
                                             <div key={invId} className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
                                                 <div className="p-4 flex items-center gap-4">
-                                                    <button onClick={() => togglePackingStatus(activeJob.id, invId)} className={`p-3 rounded-2xl ${status === 'gepackt' ? 'bg-green-100 text-green-600' : status === 'im-einsatz' ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-300'}`}>
-                                                        <LucideIcon name={status === 'gepackt' ? 'check-circle-2' : status === 'im-einsatz' ? 'zap' : 'circle'} />
+                                                    <button onClick={() => togglePackingStatus(activeJob.id, invId, requiredQty)} className={`p-3 rounded-2xl ${btnColor} transition-colors flex-shrink-0`}>
+                                                        <LucideIcon name={iconName} />
                                                     </button>
-                                                    <div className="flex-1" onClick={() => setExpandedItems({...expandedItems, [invId]: !isExpanded})}>
-                                                        <h4 className={`font-bold ${status === 'gepackt' ? 'text-slate-300 line-through' : ''}`}>{item.name}</h4>
-                                                        <p className="text-[10px] text-slate-400 font-bold uppercase">{item.category}</p>
+                                                    <div className="flex-1 min-w-0" onClick={() => setExpandedItems({...expandedItems, [invId]: !isExpanded})}>
+                                                        <h4 className={`font-bold truncate ${packInfo.status === 'gepackt' ? 'text-slate-300 line-through' : ''}`}>{item.name}</h4>
+                                                        <div className="flex items-center gap-2 mt-0.5">
+                                                            <p className="text-[10px] text-slate-400 font-bold uppercase">{item.category}</p>
+                                                            <span className={`text-[10px] font-black px-1.5 rounded-md ${packInfo.packed === requiredQty ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                                {packInfo.packed} / {requiredQty}
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 {isExpanded && item.accessories && item.accessories.length > 0 && (
@@ -395,15 +632,18 @@
                                             <button onClick={() => setShowAddModal(true)} className="bg-blue-600 text-white p-2 rounded-xl"><LucideIcon name="plus" /></button>
                                         </div>
                                         {jobs.length === 0 && <p className="text-center text-slate-300 py-10">Keine Jobs geplant.</p>}
-                                        {jobs.map(job => (
+                                        {jobs.sort((a,b) => new Date(a.startDate) - new Date(b.startDate)).map(job => (
                                             <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-95 transition-all cursor-pointer">
-                                                <p className="text-blue-600 text-[10px] font-black uppercase mb-1">{new Date(job.date).toLocaleDateString('de-DE')}</p>
+                                                <p className="text-blue-600 text-[10px] font-black uppercase mb-1">
+                                                    {new Date(job.startDate).toLocaleDateString('de-DE')}
+                                                    {job.startDate !== job.endDate && ` - ${new Date(job.endDate).toLocaleDateString('de-DE')}`}
+                                                </p>
                                                 <h3 className="text-lg font-bold mb-4">{job.name}</h3>
                                                 <div className="flex justify-between items-center">
                                                     <div className="flex -space-x-2">
-                                                        {job.selectedItemIds.slice(0, 3).map(id => <div key={id} className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-400 shadow-sm">{inventory.find(i => i.id === id)?.name?.charAt(0)}</div>)}
+                                                        {Object.keys(job.selectedItemIds).slice(0, 3).map(id => <div key={id} className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-400 shadow-sm">{inventory.find(i => i.id === id)?.name?.charAt(0) || '?'}</div>)}
                                                     </div>
-                                                    <LucideIcon name="chevron-right" className="text-slate-200" />
+                                                    <div className="text-[10px] font-bold text-slate-400">{Object.keys(job.selectedItemIds).length} Items</div>
                                                 </div>
                                             </div>
                                         ))}
@@ -426,7 +666,7 @@
                                             </div>
                                             <div className="calendar-grid gap-1">
                                                 {calendarDays.map((date, i) => {
-                                                    const dateJobs = date ? jobs.filter(j => j.date === date.toISOString().split('T')[0]) : [];
+                                                    const dateJobs = getJobsForDate(date);
                                                     const isToday = date && date.toDateString() === new Date().toDateString();
                                                     return (
                                                         <div key={i} className={`aspect-square flex flex-col items-center justify-center rounded-xl text-xs relative ${!date ? '' : 'bg-slate-50'} ${isToday ? 'ring-2 ring-blue-400 font-black' : ''}`}>
@@ -443,58 +683,111 @@
 
                                         <div className="space-y-2 mt-4">
                                             <h3 className="text-xs font-bold text-slate-400 uppercase ml-2">Jobs in diesem Monat</h3>
-                                            {jobs.filter(j => new Date(j.date).getMonth() === currentDate.getMonth()).map(j => (
+                                            {jobs.filter(j => {
+                                                const sMonth = new Date(j.startDate).getMonth();
+                                                const eMonth = new Date(j.endDate).getMonth();
+                                                const cMonth = currentDate.getMonth();
+                                                return cMonth >= sMonth && cMonth <= eMonth;
+                                            }).map(j => (
                                                 <div key={j.id} onClick={() => setActiveJobId(j.id)} className="bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-100 shadow-sm cursor-pointer">
                                                     <div className="flex items-center gap-3">
                                                         <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-                                                        <span className="font-bold text-sm">{j.name}</span>
+                                                        <div className="flex flex-col">
+                                                            <span className="font-bold text-sm">{j.name}</span>
+                                                            <span className="text-[10px] text-slate-400">{new Date(j.startDate).toLocaleDateString('de-DE')} {j.startDate !== j.endDate && `- ${new Date(j.endDate).toLocaleDateString('de-DE')}`}</span>
+                                                        </div>
                                                     </div>
-                                                    <span className="text-[10px] font-bold text-slate-400">{new Date(j.date).toLocaleDateString('de-DE')}</span>
                                                 </div>
                                             ))}
-                                            {jobs.filter(j => new Date(j.date).getMonth() === currentDate.getMonth()).length === 0 && <p className="text-xs text-slate-300 ml-2">Keine Jobs</p>}
+                                            {jobs.length === 0 && <p className="text-xs text-slate-300 ml-2">Keine Jobs</p>}
                                         </div>
                                     </div>
                                 )}
 
                                 {activeTab === 'lager' && (
-                                    <>
-                                        <div className="flex justify-between items-center px-2">
+                                    <div className="space-y-4">
+                                        <div className="flex justify-between items-center px-2 mb-6">
                                             <h2 className="text-xl font-bold">Lager</h2>
-                                            <button onClick={() => {setEditingItem(null); setFormData({name: "", category: categories[0] || "Sonstiges", quantity: 1}); setShowAddModal(true);}} className="bg-blue-600 text-white p-2 rounded-xl"><LucideIcon name="plus" /></button>
+                                            <button onClick={() => {setEditingItem(null); setItemType('item'); setFormData({name: "", category: categories[0] || "Sonstiges", quantity: 1, bundleItems: {}}); setShowAddModal(true);}} className="bg-blue-600 text-white p-2 rounded-xl shadow-lg"><LucideIcon name="plus" /></button>
                                         </div>
                                         {inventory.length === 0 && <p className="text-center text-slate-300 py-10">Lager ist leer.</p>}
-                                        {inventory.map(item => (
-                                            <div key={item.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 flex flex-col gap-4 shadow-sm relative">
-                                                <div className="flex justify-between items-center">
-                                                    <div>
-                                                        <p className="text-[10px] font-black text-blue-500 uppercase">{item.category}</p>
-                                                        <h3 className="font-bold">{item.name}</h3>
+                                        
+                                        {Object.entries(groupedInventoryLager).map(([cat, data]) => {
+                                            const hasItems = data.items.length > 0 || Object.values(data.subs).some(subArr => subArr.length > 0);
+                                            if (!hasItems) return null;
+                                            const isExpanded = expandedCatsLager[cat];
+                                            
+                                            // Helper to render a single item
+                                            const renderItem = (item) => (
+                                                <div key={item.id} className={`bg-white p-5 rounded-[2rem] border ${item.isBundle ? 'border-purple-200 bg-purple-50/30' : 'border-slate-100'} flex flex-col gap-4 shadow-sm`}>
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            {item.isBundle ? (
+                                                                <p className="text-[10px] font-black text-purple-500 uppercase flex items-center gap-1"><LucideIcon name="layers" size={12}/> Bundle</p>
+                                                            ) : (
+                                                                <p className="text-[10px] font-black text-blue-500 uppercase">{item.category}</p>
+                                                            )}
+                                                            <h3 className="font-bold">{item.name}</h3>
+                                                            {item.isBundle && (
+                                                                <p className="text-[10px] text-slate-400 mt-1">
+                                                                    Enthält: {Object.entries(item.bundleItems || {}).map(([bId, qty]) => `${qty}x ${inventory.find(i=>i.id===bId)?.name}`).join(', ')}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={() => {setEditingItem(item); setItemType(item.isBundle ? 'bundle' : 'item'); setFormData({name: item.name, category: item.category, quantity: item.quantity, bundleItems: item.bundleItems || {}}); setShowAddModal(true);}} className="text-slate-400 p-1"><LucideIcon name="edit-2" size={16} /></button>
+                                                            <button onClick={() => confirmDeleteItem(item.id)} className="text-red-300 p-1"><LucideIcon name="trash-2" size={16} /></button>
+                                                        </div>
                                                     </div>
-                                                    <div className="flex gap-2">
-                                                        <button onClick={() => {setEditingItem(item); setFormData({name: item.name, category: item.category, quantity: item.quantity}); setShowAddModal(true);}} className="text-slate-400 p-1"><LucideIcon name="edit-2" size={16} /></button>
-                                                        <button onClick={() => {if(confirm('Item löschen?')) setInventory(inventory.filter(i=>i.id!==item.id))}} className="text-red-300 p-1"><LucideIcon name="trash-2" size={16} /></button>
-                                                    </div>
+                                                    {!item.isBundle && (
+                                                        <div className="flex justify-between items-center bg-slate-50 px-4 py-2 rounded-2xl">
+                                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Bestand</span>
+                                                            <div className="flex items-center gap-4">
+                                                                <button onClick={() => setInventory(inventory.map(i=>i.id===item.id?{...i, quantity:Math.max(1, i.quantity-1)}:i))} className="bg-white shadow-sm w-8 h-8 rounded-full flex items-center justify-center text-blue-600"><LucideIcon name="minus" size={16} /></button>
+                                                                <span className="font-bold text-lg">{item.quantity || 1}</span>
+                                                                <button onClick={() => setInventory(inventory.map(i=>i.id===item.id?{...i, quantity:i.quantity+1}:i))} className="bg-white shadow-sm w-8 h-8 rounded-full flex items-center justify-center text-blue-600"><LucideIcon name="plus" size={16} /></button>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <div className="flex justify-between items-center bg-slate-50 px-4 py-2 rounded-2xl">
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase">Bestand</span>
-                                                    <div className="flex items-center gap-4">
-                                                        <button onClick={() => setInventory(inventory.map(i=>i.id===item.id?{...i, quantity:Math.max(1, i.quantity-1)}:i))} className="bg-white shadow-sm w-8 h-8 rounded-full flex items-center justify-center text-blue-600"><LucideIcon name="minus" size={16} /></button>
-                                                        <span className="font-bold text-lg">{item.quantity || 1}</span>
-                                                        <button onClick={() => setInventory(inventory.map(i=>i.id===item.id?{...i, quantity:i.quantity+1}:i))} className="bg-white shadow-sm w-8 h-8 rounded-full flex items-center justify-center text-blue-600"><LucideIcon name="plus" size={16} /></button>
-                                                    </div>
+                                            );
+
+                                            return (
+                                                <div key={cat} className="mb-6">
+                                                    <button onClick={() => toggleCatLager(cat)} className="flex items-center gap-2 w-full px-2 mb-3 text-slate-400">
+                                                        <LucideIcon name={isExpanded ? "chevron-up" : "chevron-down"} size={16} />
+                                                        <h3 className="text-xs font-black uppercase tracking-widest">{cat}</h3>
+                                                        <div className="h-px bg-slate-200 flex-1 ml-2"></div>
+                                                    </button>
+                                                    
+                                                    {isExpanded && (
+                                                        <div className="space-y-3">
+                                                            {data.items.map(renderItem)}
+                                                            
+                                                            {Object.entries(data.subs).map(([subCat, subItems]) => {
+                                                                if (subItems.length === 0) return null;
+                                                                return (
+                                                                    <div key={subCat} className="mt-4 border-l-2 border-slate-200 pl-3 ml-2 space-y-3">
+                                                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">{subCat}</h4>
+                                                                        {subItems.map(renderItem)}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </>
+                                            );
+                                        })}
+                                    </div>
                                 )}
+                                
                                 {activeTab === 'stats' && (
                                     <div className="space-y-6">
                                         <h2 className="text-xl font-bold px-2">Statistik</h2>
                                         <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
                                             <h3 className="font-bold mb-4">Top Equipment</h3>
                                             <div className="space-y-4">
-                                                {inventory.sort((a,b) => usageStats[b.id] - usageStats[a.id]).slice(0, 5).map(item => (
+                                                {inventory.filter(i=>!i.isBundle).sort((a,b) => usageStats[b.id] - usageStats[a.id]).slice(0, 5).map(item => (
                                                     <div key={item.id}>
                                                         <div className="flex justify-between text-xs font-bold mb-1">
                                                             <span>{item.name}</span>
@@ -505,7 +798,6 @@
                                                         </div>
                                                     </div>
                                                 ))}
-                                                {inventory.length === 0 && <p className="text-xs text-slate-300">Keine Daten</p>}
                                             </div>
                                         </div>
                                     </div>
@@ -515,7 +807,7 @@
                     </main>
 
                     {/* --- NAVIGATION --- */}
-                    <nav className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-xl border-t border-slate-100 flex justify-around items-center py-6 px-4 z-40">
+                    <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-slate-100 flex justify-around items-center py-6 px-4 z-40">
                         <button onClick={() => {setActiveTab('lager'); setActiveJobId(null);}} className={`flex flex-col items-center gap-1 flex-1 ${activeTab === 'lager' ? 'text-blue-600' : 'text-slate-300'}`}>
                             <LucideIcon name="box" />
                             <span className="text-[9px] font-black uppercase">Lager</span>
@@ -539,20 +831,55 @@
                         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-end justify-center">
                             <div className="bg-white w-full max-w-md rounded-t-[3rem] p-8 animate-in slide-in-from-bottom duration-300 shadow-2xl max-h-[80vh] overflow-y-auto">
                                 <div className="flex justify-between mb-8 items-center">
-                                    <h2 className="text-2xl font-black">Kategorien</h2>
+                                    <h2 className="text-2xl font-black">Kategorien verwalten</h2>
                                     <button onClick={() => setShowCategoryModal(false)}><LucideIcon name="x" className="text-slate-300" /></button>
                                 </div>
-                                <div className="space-y-3 mb-8">
-                                    {categories.map(cat => (
-                                        <div key={cat} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                            <span className="font-bold">{cat}</span>
-                                            <button onClick={() => deleteCategory(cat)} className="text-red-300"><LucideIcon name="trash-2" size={18} /></button>
-                                        </div>
-                                    ))}
+                                <div className="space-y-4 mb-8">
+                                    {(() => {
+                                        const catHierarchy = {};
+                                        categories.forEach(c => {
+                                            const parts = c.split(' - ');
+                                            const main = parts[0];
+                                            if (!catHierarchy[main]) catHierarchy[main] = [];
+                                            if (parts.length > 1) catHierarchy[main].push({ full: c, sub: parts[1] });
+                                        });
+
+                                        return Object.entries(catHierarchy).map(([main, subs]) => (
+                                            <div key={main} className="mb-2">
+                                                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                                    <span className="font-bold">{main}</span>
+                                                    <button onClick={() => deleteCategory(main)} className="text-red-400 p-2 hover:bg-red-50 rounded-full transition-colors"><LucideIcon name="trash-2" size={18} /></button>
+                                                </div>
+                                                {subs.length > 0 && (
+                                                    <div className="pl-4 mt-2 space-y-2 border-l-2 border-slate-100 ml-4">
+                                                        {subs.map(s => (
+                                                            <div key={s.full} className="flex justify-between items-center p-2 bg-white rounded-lg border border-slate-100">
+                                                                <span className="text-sm text-slate-600">{s.sub}</span>
+                                                                <button onClick={() => deleteCategory(s.full)} className="text-red-300 p-1"><LucideIcon name="trash-2" size={16} /></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ));
+                                    })()}
+                                    {categories.length === 0 && <p className="text-xs text-slate-400 italic">Keine Kategorien vorhanden.</p>}
                                 </div>
-                                <div className="flex gap-2">
-                                    <input className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl p-4 font-bold outline-none" placeholder="Neue Kat..." value={newCatName} onChange={e=>setNewCatName(e.target.value)} />
-                                    <button onClick={addCategory} className="bg-blue-600 text-white px-6 rounded-2xl"><LucideIcon name="plus" /></button>
+                                
+                                <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">Neue Kategorie</h3>
+                                <div className="space-y-2">
+                                    <select 
+                                        className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 font-bold outline-none text-sm appearance-none" 
+                                        value={newCatParent} 
+                                        onChange={e=>setNewCatParent(e.target.value)}
+                                    >
+                                        <option value="">-- Als Hauptkategorie --</option>
+                                        {categories.filter(c => !c.includes(' - ')).map(c => <option key={c} value={c}>Unterkategorie von: {c}</option>)}
+                                    </select>
+                                    <div className="flex gap-2">
+                                        <input className="flex-1 bg-slate-50 border border-slate-100 rounded-xl p-3 font-bold outline-none text-sm" placeholder="Name der Kategorie..." value={newCatName} onChange={e=>setNewCatName(e.target.value)} />
+                                        <button onClick={addCategory} className="bg-blue-600 text-white px-5 rounded-xl"><LucideIcon name="plus" size={20}/></button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -561,57 +888,180 @@
                     {/* --- ADD MODAL (Item/Job) --- */}
                     {showAddModal && (
                         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-end justify-center">
-                            <div className="bg-white w-full max-w-md rounded-t-[3rem] p-8 animate-in slide-in-from-bottom duration-300 shadow-2xl max-h-[90vh] overflow-y-auto">
+                            <div className="bg-white w-full max-w-md rounded-t-[3rem] p-8 animate-in slide-in-from-bottom duration-300 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
                                 <div className="flex justify-between mb-8 items-center">
-                                    <h2 className="text-2xl font-black">{activeTab === 'lager' ? (editingItem ? "Bearbeiten" : "Neues Item") : "Job planen"}</h2>
+                                    <h2 className="text-2xl font-black">{activeTab === 'lager' ? (editingItem ? "Bearbeiten" : "Neu anlegen") : "Job planen"}</h2>
                                     <button onClick={() => {setShowAddModal(false); setEditingItem(null);}}><LucideIcon name="x" className="text-slate-300" /></button>
                                 </div>
                                 
                                 {activeTab === 'lager' ? (
                                     <form onSubmit={saveInventoryItem} className="space-y-6">
+                                        {!editingItem && (
+                                            <div className="flex bg-slate-100 p-1 rounded-2xl mb-6">
+                                                <button type="button" onClick={() => setItemType('item')} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${itemType === 'item' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400'}`}>Artikel</button>
+                                                <button type="button" onClick={() => setItemType('bundle')} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${itemType === 'bundle' ? 'bg-white shadow-sm text-purple-600' : 'text-slate-400'}`}>Bundle</button>
+                                            </div>
+                                        )}
+                                        
                                         <div>
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Name</label>
-                                            <input className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 mt-1 font-bold outline-none" placeholder="z.B. Stativ" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+                                            <input className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 mt-1 font-bold outline-none" placeholder={itemType === 'bundle' ? "z.B. Podcast Koffer" : "z.B. Stativ"} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
                                         </div>
-                                        <div>
-                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Kategorie</label>
-                                            <select className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 mt-1 font-bold outline-none appearance-none" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
-                                                {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                                {categories.length === 0 && <option value="Sonstiges">Sonstiges</option>}
-                                            </select>
-                                        </div>
-                                        <button type="submit" className="w-full bg-blue-600 text-white py-5 rounded-[2rem] font-black mt-4 shadow-xl shadow-blue-100">{editingItem ? "Speichern" : "Hinzufügen"}</button>
+                                        
+                                        {itemType === 'item' && (
+                                            <div>
+                                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Kategorie</label>
+                                                <select className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 mt-1 font-bold outline-none appearance-none" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+                                                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                    {categories.length === 0 && <option value="Sonstiges">Sonstiges</option>}
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        {itemType === 'bundle' && (
+                                            <div>
+                                                <label className="text-[10px] font-black text-purple-400 uppercase ml-1">Artikel zum Bundle hinzufügen</label>
+                                                <div className="mt-2 space-y-2 border border-slate-100 rounded-2xl p-2 bg-slate-50 max-h-48 overflow-y-auto custom-scrollbar">
+                                                    {inventory.filter(i => !i.isBundle).map(item => {
+                                                        const qty = formData.bundleItems[item.id] || 0;
+                                                        return (
+                                                            <div key={item.id} className="flex justify-between items-center p-3 bg-white rounded-xl border border-slate-100">
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-bold text-sm">{item.name}</span>
+                                                                    <span className="text-[9px] uppercase text-slate-400">{item.category}</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-3">
+                                                                    <button type="button" onClick={() => {
+                                                                        const newB = {...formData.bundleItems};
+                                                                        if (newB[item.id] > 1) newB[item.id]--; else delete newB[item.id];
+                                                                        setFormData({...formData, bundleItems: newB});
+                                                                    }} className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500"><LucideIcon name="minus" size={14}/></button>
+                                                                    <span className="font-bold w-4 text-center">{qty}</span>
+                                                                    <button type="button" onClick={() => {
+                                                                        setFormData({...formData, bundleItems: {...formData.bundleItems, [item.id]: qty + 1}});
+                                                                    }} className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-blue-600"><LucideIcon name="plus" size={14}/></button>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                        <button type="submit" className={`w-full text-white py-5 rounded-[2rem] font-black mt-4 shadow-xl ${itemType === 'bundle' ? 'bg-purple-600 shadow-purple-200' : 'bg-blue-600 shadow-blue-100'}`}>
+                                            {editingItem ? "Speichern" : "Hinzufügen"}
+                                        </button>
                                     </form>
                                 ) : (
                                     <form onSubmit={createJob} className="space-y-6">
                                         <div>
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Job Name</label>
-                                            <input className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 mt-1 font-bold outline-none" placeholder="z.B. Fotoshooting" value={jobFormData.name} onChange={e => setJobFormData({...jobFormData, name: e.target.value})} required />
+                                            <input className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 mt-1 font-bold outline-none" placeholder="z.B. Werbedreh" value={jobFormData.name} onChange={e => setJobFormData({...jobFormData, name: e.target.value})} required />
                                         </div>
-                                        <div>
-                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Datum</label>
-                                            <input type="date" className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 mt-1 font-bold outline-none" value={jobFormData.date} onChange={e => setJobFormData({...jobFormData, date: e.target.value})} />
-                                        </div>
-                                        <div>
-                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1 text-blue-600">Equipment wählen</label>
-                                            <div className="grid grid-cols-1 gap-2 mt-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                                                {inventory.map(item => (
-                                                    <div key={item.id} onClick={() => {
-                                                        const items = jobFormData.items.includes(item.id) ? jobFormData.items.filter(id => id !== item.id) : [...jobFormData.items, item.id];
-                                                        setJobFormData({...jobFormData, items});
-                                                    }} className={`p-4 rounded-2xl border flex justify-between items-center transition-all cursor-pointer ${jobFormData.items.includes(item.id) ? 'bg-blue-50 border-blue-200 text-blue-700 shadow-sm' : 'bg-slate-50 border-transparent text-slate-400'}`}>
-                                                        <div className="flex flex-col">
-                                                            <span className="font-bold text-sm">{item.name}</span>
-                                                            <span className="text-[9px] font-black uppercase opacity-50">{item.category}</span>
-                                                        </div>
-                                                        {jobFormData.items.includes(item.id) && <LucideIcon name="check-circle-2" size={18} />}
-                                                    </div>
-                                                ))}
+                                        <div className="flex gap-4">
+                                            <div className="flex-1">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Start</label>
+                                                <input type="date" className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 mt-1 font-bold outline-none text-xs" value={jobFormData.startDate} onChange={e => {
+                                                    const newStart = e.target.value;
+                                                    setJobFormData({...jobFormData, startDate: newStart, endDate: newStart > jobFormData.endDate ? newStart : jobFormData.endDate});
+                                                }} />
+                                            </div>
+                                            <div className="flex-1">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ende</label>
+                                                <input type="date" className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 mt-1 font-bold outline-none text-xs" value={jobFormData.endDate} onChange={e => setJobFormData({...jobFormData, endDate: e.target.value})} min={jobFormData.startDate} />
                                             </div>
                                         </div>
-                                        <button type="submit" className="w-full bg-blue-600 text-white py-5 rounded-[2rem] font-black mt-4 shadow-xl shadow-blue-100" disabled={!jobFormData.name || jobFormData.items.length === 0}>Job Planen</button>
+                                        <div>
+                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1 text-blue-600 mb-2 block">Equipment wählen (Verfügbar)</label>
+                                            
+                                            {Object.entries(groupedInventoryLager).map(([cat, data]) => {
+                                                const hasItems = data.items.length > 0 || Object.values(data.subs).some(subArr => subArr.length > 0);
+                                                if (!hasItems) return null;
+                                                const isExpanded = expandedCatsPlaner[cat];
+                                                
+                                                // Helper to render selection item
+                                                const renderSelectionItem = (item) => {
+                                                    if (item.isBundle) {
+                                                        return (
+                                                            <div key={item.id} className="p-3 rounded-xl border border-purple-100 bg-purple-50/30 flex justify-between items-center mb-2">
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-bold text-sm">{item.name}</span>
+                                                                </div>
+                                                                <button type="button" onClick={() => addBundleToJob(item)} className="bg-purple-100 text-purple-700 text-xs font-bold px-3 py-1.5 rounded-lg active:scale-95 transition-transform">
+                                                                    Bundle laden
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    } else {
+                                                        const available = getAvailableQty(item.id, jobFormData.startDate, jobFormData.endDate);
+                                                        const selected = jobFormData.items[item.id] || 0;
+                                                        
+                                                        return (
+                                                            <div key={item.id} className={`p-3 rounded-xl border flex justify-between items-center transition-all mb-2 ${selected > 0 ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100'}`}>
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-bold text-sm">{item.name}</span>
+                                                                    <span className="text-[9px] font-black uppercase text-slate-400">Frei: {available}</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-3">
+                                                                    <button type="button" disabled={selected === 0} onClick={() => {
+                                                                        const newI = {...jobFormData.items};
+                                                                        if (selected > 1) newI[item.id]--; else delete newI[item.id];
+                                                                        setJobFormData({...jobFormData, items: newI});
+                                                                    }} className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 disabled:opacity-30"><LucideIcon name="minus" size={14}/></button>
+                                                                    <span className="font-bold w-4 text-center text-sm">{selected}</span>
+                                                                    <button type="button" disabled={selected >= available} onClick={() => {
+                                                                        setJobFormData({...jobFormData, items: {...jobFormData.items, [item.id]: selected + 1}});
+                                                                    }} className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-blue-600 disabled:opacity-30"><LucideIcon name="plus" size={14}/></button>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    }
+                                                };
+
+                                                return (
+                                                    <div key={cat} className="mb-2">
+                                                        <button type="button" onClick={() => toggleCatPlaner(cat)} className="flex items-center justify-between w-full p-3 bg-slate-50 rounded-xl">
+                                                            <span className={`text-[10px] font-black uppercase tracking-widest ${cat === 'Bundles' ? 'text-purple-600' : 'text-slate-500'}`}>{cat}</span>
+                                                            <LucideIcon name={isExpanded ? "chevron-up" : "chevron-down"} size={16} className="text-slate-400"/>
+                                                        </button>
+                                                        
+                                                        {isExpanded && (
+                                                            <div className="mt-2 pl-2 border-l-2 border-slate-100 ml-2">
+                                                                {data.items.map(renderSelectionItem)}
+                                                                
+                                                                {Object.entries(data.subs).map(([subCat, subItems]) => {
+                                                                    if (subItems.length === 0) return null;
+                                                                    return (
+                                                                        <div key={subCat} className="mt-3">
+                                                                            <h4 className="text-[9px] font-black uppercase text-slate-400 mb-2 pl-1">{subCat}</h4>
+                                                                            {subItems.map(renderSelectionItem)}
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        <button type="submit" className="w-full bg-blue-600 text-white py-5 rounded-[2rem] font-black mt-4 shadow-xl shadow-blue-100 disabled:opacity-50" disabled={!jobFormData.name || Object.keys(jobFormData.items).length === 0}>Job Verbindlich Planen</button>
                                     </form>
                                 )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* --- CUSTOM DIALOG --- */}
+                    {dialog && (
+                        <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+                                <h3 className="text-lg font-black text-slate-800 mb-2">{dialog.type === 'confirm' ? 'Bitte bestätigen' : 'Hinweis'}</h3>
+                                <p className="text-sm text-slate-600 mb-6">{dialog.message}</p>
+                                <div className="flex gap-3 justify-end">
+                                    {dialog.type === 'confirm' && (
+                                        <button onClick={() => setDialog(null)} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 bg-slate-100 active:bg-slate-200 transition-colors">Abbrechen</button>
+                                    )}
+                                    <button onClick={() => { if(dialog.onConfirm) dialog.onConfirm(); else setDialog(null); }} className="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 active:bg-blue-700 transition-colors">OK</button>
+                                </div>
                             </div>
                         </div>
                     )}
