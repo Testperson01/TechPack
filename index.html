@@ -15,6 +15,10 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
+    <!-- PDF Export Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
     <!-- Firebase SDKs laden -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -88,7 +92,6 @@
                 if (typeof window !== 'undefined') {
                     const saved = localStorage.getItem('techpack_sync_code');
                     if (saved) return saved;
-                    // Generiere einen zufälligen 6-stelligen Code
                     const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
                     localStorage.setItem('techpack_sync_code', newCode);
                     return newCode;
@@ -109,28 +112,30 @@
             const [inventory, setInventory] = useState([]);
             const [jobs, setJobs] = useState([]);
 
-            const [activeTab, setActiveTab] = useState('planer');
+            const [activeTab, setActiveTab] = useState('planer'); // Intern bleibt es 'planer', im UI 'Jobs'
             const [activeJobId, setActiveJobId] = useState(null);
+            const [jobMode, setJobMode] = useState('packen'); // 'packen' oder 'return'
+            
             const [showAddModal, setShowAddModal] = useState(false);
             const [showCategoryModal, setShowCategoryModal] = useState(false);
             const [editingItem, setEditingItem] = useState(null);
             const [expandedItems, setExpandedItems] = useState({});
             
-            // Aufklapp-Status für Kategorien im Lager und im Planer
             const [expandedCatsLager, setExpandedCatsLager] = useState({});
             const [expandedCatsPlaner, setExpandedCatsPlaner] = useState({});
+            const [showCompletedJobs, setShowCompletedJobs] = useState(false); // Toggle für abgeschlossene Jobs
 
             const [currentDate, setCurrentDate] = useState(new Date());
             const [dialog, setDialog] = useState(null);
             
             // Form States
-            const [itemType, setItemType] = useState('item'); // 'item' oder 'bundle'
-            const [formData, setFormData] = useState({ name: "", category: "Kamera", quantity: 1, bundleItems: {} });
+            const [itemType, setItemType] = useState('item');
+            const [formData, setFormData] = useState({ name: "", category: "Kamera", quantity: 1, bundleItems: {}, imageUrl: "" });
             
             const todayStr = new Date().toISOString().split('T')[0];
             const [jobFormData, setJobFormData] = useState({ name: "", startDate: todayStr, endDate: todayStr, items: {} });
             const [newCatName, setNewCatName] = useState("");
-            const [newCatParent, setNewCatParent] = useState(""); // NEU: Parent-Category State
+            const [newCatParent, setNewCatParent] = useState("");
 
             // --- STANDARD KATEGORIEN ---
             const DEFAULT_CATEGORIES = [
@@ -213,8 +218,6 @@
             useEffect(() => {
                 if (!cloudReady || !user || !window.db) return;
                 const { doc, onSnapshot, setDoc } = window.FirebaseDeps;
-                
-                // HIER IST DIE MAGIE: Wir nutzen den Sync-Code für den Pfad in der Datenbank!
                 const docRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'techpack_sync', syncCode);
                 
                 setSyncStatus('syncing');
@@ -239,14 +242,33 @@
                                 }
 
                                 let newPacking = j.packingStatus || {};
-                                Object.keys(newPacking).forEach(id => {
+                                let newReturn = j.returnStatus || {};
+                                let newAccReturn = j.returnAccessoryStatus || {};
+                                
+                                Object.keys(newSelected || {}).forEach(id => {
+                                    const qty = newSelected[id] || 1;
+                                    // Migration für Packing
                                     if (typeof newPacking[id] === 'string') {
-                                        const qty = newSelected[id] || 1;
                                         newPacking[id] = { packed: (newPacking[id] === 'gepackt' || newPacking[id] === 'im-einsatz') ? qty : 0, status: newPacking[id] };
+                                    } else if (!newPacking[id]) {
+                                        newPacking[id] = { packed: 0, status: 'fehlt' };
+                                    }
+                                    // Migration für Return
+                                    if (!newReturn[id]) {
+                                        newReturn[id] = { returned: 0, status: 'fehlt' };
                                     }
                                 });
 
-                                return { ...j, startDate: start, endDate: end, selectedItemIds: newSelected || {}, packingStatus: newPacking };
+                                return { 
+                                    ...j, 
+                                    startDate: start, 
+                                    endDate: end, 
+                                    selectedItemIds: newSelected || {}, 
+                                    packingStatus: newPacking,
+                                    returnStatus: newReturn,
+                                    returnAccessoryStatus: newAccReturn,
+                                    isCompleted: j.isCompleted || false
+                                };
                             });
                             setJobs(migratedJobs);
                         } else {
@@ -256,14 +278,12 @@
                         setSyncStatus('synced');
                         setTimeout(() => { isRemoteUpdate.current = false; }, 100);
                     } else {
-                        // Wenn der Code neu ist, initialisieren wir eine leere Struktur
                         const initialData = {
                             categories: DEFAULT_CATEGORIES,
                             inventory: [],
                             jobs: []
                         };
                         setDoc(docRef, initialData, { merge: true });
-                        // Setze auch den lokalen State zurück, falls wir den Code wechseln
                         setCategories(DEFAULT_CATEGORIES);
                         setInventory([]);
                         setJobs([]);
@@ -275,7 +295,7 @@
                 });
                 
                 return () => unsub();
-            }, [cloudReady, user, syncCode]); // WICHTIG: Aktualisieren, wenn sich der syncCode ändert!
+            }, [cloudReady, user, syncCode]);
 
             // --- 3. DATEN IN DIE CLOUD SPEICHERN ---
             useEffect(() => {
@@ -284,7 +304,6 @@
                 const saveTimer = setTimeout(() => {
                     setSyncStatus('syncing');
                     const { doc, setDoc } = window.FirebaseDeps;
-                    // Daten immer unter dem aktuellen Sync-Code speichern
                     const docRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'techpack_sync', syncCode);
                     
                     setDoc(docRef, { categories, inventory, jobs }, { merge: true })
@@ -298,6 +317,13 @@
             // --- APP LOGIK & HILFSFUNKTIONEN ---
             const activeJob = useMemo(() => jobs.find(j => j.id === activeJobId), [jobs, activeJobId]);
             
+            // Setze Job Mode auf Packen, wenn ein anderer Job geöffnet wird
+            useEffect(() => {
+                if (activeJobId && activeJob) {
+                    setJobMode(activeJob.isCompleted ? 'return' : 'packen');
+                }
+            }, [activeJobId]);
+
             const usageStats = useMemo(() => {
                 const stats = {};
                 inventory.forEach(item => stats[item.id] = 0);
@@ -314,7 +340,8 @@
                 if (!item || item.isBundle) return 0;
                 let used = 0;
                 jobs.forEach(j => {
-                    if (j.startDate <= endStr && j.endDate >= startStr) {
+                    // Abgeschlossene Jobs blockieren kein Inventar mehr!
+                    if (!j.isCompleted && j.startDate <= endStr && j.endDate >= startStr) {
                         if (j.selectedItemIds[itemId]) {
                             used += j.selectedItemIds[itemId];
                         }
@@ -394,7 +421,7 @@
                 } else {
                     setInventory([...inventory, { id: `inv-${Date.now()}`, ...formData, isBundle: isBndl, accessories: [] }]);
                 }
-                setFormData({ name: "", category: categories[0] || "Sonstiges", quantity: 1, bundleItems: {} });
+                setFormData({ name: "", category: categories[0] || "Sonstiges", quantity: 1, bundleItems: {}, imageUrl: "" });
                 setShowAddModal(false);
             };
 
@@ -422,6 +449,93 @@
                 });
             };
 
+            const exportPDF = () => {
+                if (!window.jspdf || !window.jspdf.jsPDF) {
+                    setDialog({ type: 'alert', message: 'PDF-Bibliothek wird noch geladen. Bitte versuche es gleich noch einmal.' });
+                    return;
+                }
+                
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                
+                // Titel
+                doc.setFontSize(22);
+                doc.setTextColor(30, 41, 59); // slate-800
+                doc.text(`Packliste: ${activeJob.name}`, 14, 22);
+                
+                // Datum & Meta
+                doc.setFontSize(11);
+                doc.setTextColor(100, 116, 139); // slate-500
+                const startDateStr = new Date(activeJob.startDate).toLocaleDateString('de-DE');
+                const endDateStr = new Date(activeJob.endDate).toLocaleDateString('de-DE');
+                const dateStr = activeJob.startDate !== activeJob.endDate ? `${startDateStr} bis ${endDateStr}` : startDateStr;
+                doc.text(`Zeitraum: ${dateStr}`, 14, 30);
+                doc.text(`Exportiert am: ${new Date().toLocaleDateString('de-DE')} ${new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute:'2-digit'})} Uhr`, 14, 36);
+                
+                // Tabellen-Daten
+                const tableData = [];
+                Object.entries(activeJob.selectedItemIds).forEach(([invId, reqQty]) => {
+                    const item = inventory.find(i => i.id === invId);
+                    if (!item) return;
+                    
+                    tableData.push([
+                        `${reqQty}x`, 
+                        item.name, 
+                        item.category || 'Sonstiges',
+                        '', // Check Out Platzhalter
+                        ''  // Check In Platzhalter
+                    ]);
+                    
+                    if (item.accessories && item.accessories.length > 0) {
+                        item.accessories.forEach(acc => {
+                            tableData.push([
+                                `1x`, 
+                                `   ↳ ${acc.name}`, 
+                                'Zubehör',
+                                '',
+                                ''
+                            ]);
+                        });
+                    }
+                });
+                
+                // AutoTable generieren
+                doc.autoTable({
+                    startY: 44,
+                    head: [['Menge', 'Artikel', 'Kategorie', 'Out', 'In']],
+                    body: tableData,
+                    theme: 'grid',
+                    headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold', halign: 'left' }, // blue-600
+                    bodyStyles: { textColor: [51, 65, 85] },
+                    alternateRowStyles: { fillColor: [248, 250, 252] },
+                    columnStyles: {
+                        0: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+                        1: { cellWidth: 'auto', halign: 'left' },
+                        2: { cellWidth: 35, textColor: [100, 116, 139], halign: 'left' },
+                        3: { cellWidth: 15, halign: 'center' }, // Out Spalte
+                        4: { cellWidth: 15, halign: 'center' }  // In Spalte
+                    },
+                    didDrawCell: function(data) {
+                        // Zeichne manuell kleine Checkbox-Quadrate in die Spalten 'Out' (3) und 'In' (4)
+                        if ((data.column.index === 3 || data.column.index === 4) && data.section === 'head') {
+                             doc.setTextColor(255, 255, 255);
+                        }
+                        if ((data.column.index === 3 || data.column.index === 4) && data.section === 'body') {
+                            doc.setDrawColor(203, 213, 225); // slate-300
+                            doc.setLineWidth(0.5);
+                            const boxSize = 6;
+                            const x = data.cell.x + (data.cell.width / 2) - (boxSize / 2);
+                            const y = data.cell.y + (data.cell.height / 2) - (boxSize / 2);
+                            doc.rect(x, y, boxSize, boxSize);
+                        }
+                    },
+                    styles: { fontSize: 10, cellPadding: 4 }
+                });
+                
+                // Speichern mit dynamischem Dateinamen
+                doc.save(`Packliste_${activeJob.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
+            };
+
             const addBundleToJob = (bundleItem) => {
                 const newItems = { ...jobFormData.items };
                 Object.entries(bundleItem.bundleItems || {}).forEach(([bId, bQty]) => {
@@ -437,13 +551,22 @@
                 if (!jobFormData.name || Object.keys(jobFormData.items).length === 0) return;
                 
                 const pStatus = {};
+                const rStatus = {};
                 const aStatus = {};
+                const raStatus = {};
+                
                 Object.keys(jobFormData.items).forEach(invId => {
                     pStatus[invId] = { packed: 0, status: 'fehlt' };
+                    rStatus[invId] = { returned: 0, status: 'fehlt' };
+                    
                     const invItem = inventory.find(i => i.id === invId);
                     if (invItem && invItem.accessories) {
                         aStatus[invId] = {};
-                        invItem.accessories.forEach(acc => { aStatus[invId][acc.id] = 'fehlt'; });
+                        raStatus[invId] = {};
+                        invItem.accessories.forEach(acc => { 
+                            aStatus[invId][acc.id] = 'fehlt'; 
+                            raStatus[invId][acc.id] = 'fehlt'; 
+                        });
                     }
                 });
 
@@ -459,7 +582,10 @@
                     endDate: jobFormData.endDate,
                     selectedItemIds: jobFormData.items,
                     packingStatus: pStatus,
-                    accessoryStatus: aStatus
+                    returnStatus: rStatus,
+                    accessoryStatus: aStatus,
+                    returnAccessoryStatus: raStatus,
+                    isCompleted: false
                 }]);
                 setJobFormData({ name: "", startDate: todayStr, endDate: todayStr, items: {} });
                 setShowAddModal(false);
@@ -493,6 +619,32 @@
                 }));
             };
 
+            const toggleReturnStatus = (jobId, itemId, requiredQty) => {
+                setJobs(jobs.map(job => {
+                    if (job.id === jobId) {
+                        const current = job.returnStatus?.[itemId] || { returned: 0, status: 'fehlt' };
+                        let nextReturned = current.returned;
+                        let nextStatus = current.status;
+
+                        if (current.status === 'fehlt' || current.status === 'teilweise') {
+                            nextReturned++;
+                            if (nextReturned >= requiredQty) {
+                                nextReturned = requiredQty;
+                                nextStatus = 'zurück';
+                            } else {
+                                nextStatus = 'teilweise';
+                            }
+                        } else {
+                            nextReturned = 0;
+                            nextStatus = 'fehlt';
+                        }
+
+                        return { ...job, returnStatus: { ...job.returnStatus, [itemId]: { returned: nextReturned, status: nextStatus } } };
+                    }
+                    return job;
+                }));
+            };
+
             const toggleAccStatus = (jobId, itemId, accId) => {
                 setJobs(jobs.map(job => {
                     if (job.id === jobId) {
@@ -501,6 +653,26 @@
                     }
                     return job;
                 }));
+            };
+
+            const toggleReturnAccStatus = (jobId, itemId, accId) => {
+                setJobs(jobs.map(job => {
+                    if (job.id === jobId) {
+                        const current = job.returnAccessoryStatus?.[itemId]?.[accId] || "fehlt";
+                        const newAccStatus = { ...job.returnAccessoryStatus };
+                        if (!newAccStatus[itemId]) newAccStatus[itemId] = {};
+                        newAccStatus[itemId][accId] = current === 'zurück' ? 'fehlt' : 'zurück';
+                        return { ...job, returnAccessoryStatus: newAccStatus };
+                    }
+                    return job;
+                }));
+            };
+
+            const toggleJobCompletion = (jobId) => {
+                setJobs(jobs.map(j => j.id === jobId ? { ...j, isCompleted: !j.isCompleted } : j));
+                if (activeJob && activeJob.id === jobId && !activeJob.isCompleted) {
+                    setDialog({ type: 'alert', message: 'Job abgeschlossen! Das Equipment ist wieder für andere Jobs verfügbar.' });
+                }
             };
 
             const calendarDays = useMemo(() => {
@@ -531,15 +703,20 @@
             }, [categories]);
 
             let totalRequiredQty = 0;
-            let totalPackedQty = 0;
+            let totalActionQty = 0; // Gepackt oder Zurückgegeben, je nach Modus
             if (activeJob) {
                 Object.entries(activeJob.selectedItemIds).forEach(([id, reqQty]) => {
                     totalRequiredQty += reqQty;
-                    const packed = activeJob.packingStatus[id]?.packed || 0;
-                    totalPackedQty += Math.min(packed, reqQty);
+                    if (jobMode === 'packen') {
+                        const packed = activeJob.packingStatus[id]?.packed || 0;
+                        totalActionQty += Math.min(packed, reqQty);
+                    } else {
+                        const returned = activeJob.returnStatus?.[id]?.returned || 0;
+                        totalActionQty += Math.min(returned, reqQty);
+                    }
                 });
             }
-            const progressPercent = totalRequiredQty > 0 ? Math.round((totalPackedQty / totalRequiredQty) * 100) : 0;
+            const progressPercent = totalRequiredQty > 0 ? Math.round((totalActionQty / totalRequiredQty) * 100) : 0;
 
             if (!isDataLoaded) {
                 return (
@@ -580,26 +757,45 @@
                                 <button onClick={() => setActiveJobId(null)} className="flex items-center gap-2 text-slate-400 dark:text-slate-500 font-bold text-xs uppercase mb-6">
                                     <LucideIcon name="arrow-left" size={14} /> Zurück
                                 </button>
-                                <div className="flex justify-between items-start mb-8">
+                                
+                                <div className="flex justify-between items-start mb-6">
                                     <div>
+                                        {activeJob.isCompleted && (
+                                            <span className="inline-block bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 text-[10px] font-black uppercase px-2 py-1 rounded-md mb-2">Abgeschlossen</span>
+                                        )}
                                         <h2 className="text-2xl font-black mb-1">{activeJob.name}</h2>
                                         <p className="text-blue-600 dark:text-blue-400 text-sm font-bold">
                                             {new Date(activeJob.startDate).toLocaleDateString('de-DE')} 
                                             {activeJob.startDate !== activeJob.endDate && ` - ${new Date(activeJob.endDate).toLocaleDateString('de-DE')}`}
                                         </p>
                                     </div>
-                                    <button onClick={() => confirmDeleteJob(activeJob.id)} className="text-red-400 dark:text-red-500 p-2"><LucideIcon name="trash-2" size={20} /></button>
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={exportPDF} title="PDF Packliste herunterladen" className="text-blue-600 dark:text-blue-400 p-2.5 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-xl transition-colors"><LucideIcon name="file-down" size={20} /></button>
+                                        <button onClick={() => confirmDeleteJob(activeJob.id)} title="Job löschen" className="text-red-400 dark:text-red-500 p-2.5 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-xl transition-colors"><LucideIcon name="trash-2" size={20} /></button>
+                                    </div>
+                                </div>
+
+                                {/* --- PACKEN / RÜCKGABE TOGGLE --- */}
+                                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl mb-8">
+                                    <button onClick={() => setJobMode('packen')} className={`flex-1 flex items-center justify-center gap-2 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${jobMode === 'packen' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                                        <LucideIcon name="package-open" size={16}/> Check Out
+                                    </button>
+                                    <button onClick={() => setJobMode('return')} className={`flex-1 flex items-center justify-center gap-2 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${jobMode === 'return' ? 'bg-white dark:bg-slate-700 shadow-sm text-purple-600 dark:text-purple-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                                        <LucideIcon name="package-check" size={16}/> Check In
+                                    </button>
                                 </div>
 
                                 {/* --- PROGRESS CARD --- */}
-                                <section className="bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800 rounded-[2.5rem] p-7 text-white shadow-xl shadow-blue-200 dark:shadow-none mb-8">
+                                <section className={`bg-gradient-to-br rounded-[2.5rem] p-7 text-white shadow-xl mb-8 transition-colors ${jobMode === 'packen' ? 'from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800 shadow-blue-200 dark:shadow-none' : 'from-purple-600 to-fuchsia-700 dark:from-purple-700 dark:to-fuchsia-800 shadow-purple-200 dark:shadow-none'}`}>
                                     <div className="flex justify-between items-start mb-6">
                                         <div>
-                                            <p className="opacity-80 text-xs font-black uppercase tracking-widest mb-1">Pack-Fortschritt</p>
+                                            <p className="opacity-80 text-xs font-black uppercase tracking-widest mb-1">
+                                                {jobMode === 'packen' ? 'Check-Out Fortschritt' : 'Check-In Fortschritt'}
+                                            </p>
                                             <h2 className="text-4xl font-black">{progressPercent}%</h2>
                                         </div>
                                         <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md">
-                                            <LucideIcon name="package" size={24} />
+                                            <LucideIcon name={jobMode === 'packen' ? "package" : "check-circle-2"} size={24} />
                                         </div>
                                     </div>
                                     <div className="w-full bg-black/20 h-2.5 rounded-full overflow-hidden">
@@ -609,84 +805,177 @@
                                         />
                                     </div>
                                     <p className="mt-5 text-[10px] font-black opacity-80 uppercase tracking-widest">
-                                        {totalPackedQty} von {totalRequiredQty} Items gepackt
+                                        {totalActionQty} von {totalRequiredQty} Items {jobMode === 'packen' ? 'ausgecheckt' : 'eingecheckt'}
                                     </p>
                                 </section>
 
-                                <div className="space-y-4">
+                                <div className="space-y-4 mb-8">
                                     {Object.entries(activeJob.selectedItemIds).map(([invId, requiredQty]) => {
                                         const item = inventory.find(i => i.id === invId);
                                         if (!item) return null;
-                                        const packInfo = activeJob.packingStatus[invId] || { packed: 0, status: 'fehlt' };
+                                        
+                                        const packInfo = jobMode === 'packen' 
+                                            ? (activeJob.packingStatus[invId] || { packed: 0, status: 'fehlt' })
+                                            : (activeJob.returnStatus?.[invId] || { returned: 0, status: 'fehlt' });
+
+                                        const currentCount = jobMode === 'packen' ? packInfo.packed : packInfo.returned;
                                         const isExpanded = expandedItems[invId];
                                         
                                         // Farben für den Status
-                                        const btnColor = packInfo.status === 'gepackt' ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' : 
-                                                         packInfo.status === 'im-einsatz' ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400' : 
+                                        const btnColor = (packInfo.status === 'gepackt' || packInfo.status === 'zurück') ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' : 
+                                                         packInfo.status === 'im-einsatz' ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' : 
                                                          packInfo.status === 'teilweise' ? 'bg-orange-100 text-orange-500 dark:bg-orange-900/30 dark:text-orange-400' :
                                                          'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-500';
                                         
-                                        const iconName = packInfo.status === 'gepackt' ? 'check-circle-2' : 
+                                        const iconName = (packInfo.status === 'gepackt' || packInfo.status === 'zurück') ? 'check-circle-2' : 
                                                          packInfo.status === 'im-einsatz' ? 'zap' : 
                                                          packInfo.status === 'teilweise' ? 'minus-circle' : 'circle';
 
                                         return (
                                             <div key={invId} className="bg-white dark:bg-slate-800 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden transition-colors">
                                                 <div className="p-4 flex items-center gap-4">
-                                                    <button onClick={() => togglePackingStatus(activeJob.id, invId, requiredQty)} className={`p-3 rounded-2xl ${btnColor} transition-colors flex-shrink-0`}>
+                                                    <button onClick={() => {
+                                                        if (jobMode === 'packen') togglePackingStatus(activeJob.id, invId, requiredQty);
+                                                        else toggleReturnStatus(activeJob.id, invId, requiredQty);
+                                                    }} className={`p-3 rounded-2xl ${btnColor} transition-colors flex-shrink-0`}>
                                                         <LucideIcon name={iconName} />
                                                     </button>
+                                                    <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                                                        {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" /> : <LucideIcon name={item.isBundle ? "layers" : "image"} size={18} className="text-slate-400 dark:text-slate-500" />}
+                                                    </div>
                                                     <div className="flex-1 min-w-0" onClick={() => setExpandedItems({...expandedItems, [invId]: !isExpanded})}>
-                                                        <h4 className={`font-bold truncate ${packInfo.status === 'gepackt' ? 'text-slate-300 dark:text-slate-500 line-through' : 'text-slate-800 dark:text-slate-100'}`}>{item.name}</h4>
+                                                        <h4 className={`font-bold truncate ${(packInfo.status === 'gepackt' || packInfo.status === 'zurück') ? 'text-slate-300 dark:text-slate-500 line-through' : 'text-slate-800 dark:text-slate-100'}`}>{item.name}</h4>
                                                         <div className="flex items-center gap-2 mt-0.5">
                                                             <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase">{item.category}</p>
-                                                            <span className={`text-[10px] font-black px-1.5 rounded-md ${packInfo.packed === requiredQty ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
-                                                                {packInfo.packed} / {requiredQty}
+                                                            <span className={`text-[10px] font-black px-1.5 rounded-md ${currentCount === requiredQty ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                                                                {currentCount} / {requiredQty}
                                                             </span>
                                                         </div>
                                                     </div>
                                                 </div>
                                                 {isExpanded && item.accessories && item.accessories.length > 0 && (
                                                     <div className="bg-slate-50 dark:bg-slate-900/50 p-4 border-t border-slate-100 dark:border-slate-700 space-y-2">
-                                                        {item.accessories.map(acc => (
-                                                            <div key={acc.id} onClick={() => toggleAccStatus(activeJob.id, invId, acc.id)} className="flex items-center gap-3 p-2 active:bg-white dark:active:bg-slate-800 rounded-xl transition-colors">
-                                                                <LucideIcon name={activeJob.accessoryStatus[invId]?.[acc.id] === 'gepackt' ? 'check-circle-2' : 'circle'} size={18} className={activeJob.accessoryStatus[invId]?.[acc.id] === 'gepackt' ? 'text-green-500 dark:text-green-400' : 'text-slate-200 dark:text-slate-600'} />
-                                                                <span className={`text-sm ${activeJob.accessoryStatus[invId]?.[acc.id] === 'gepackt' ? 'text-slate-300 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-300'}`}>{acc.name}</span>
-                                                            </div>
-                                                        ))}
+                                                        {item.accessories.map(acc => {
+                                                            const accStatus = jobMode === 'packen' 
+                                                                ? (activeJob.accessoryStatus[invId]?.[acc.id] === 'gepackt')
+                                                                : (activeJob.returnAccessoryStatus?.[invId]?.[acc.id] === 'zurück');
+                                                            
+                                                            return (
+                                                                <div key={acc.id} onClick={() => {
+                                                                    if(jobMode === 'packen') toggleAccStatus(activeJob.id, invId, acc.id);
+                                                                    else toggleReturnAccStatus(activeJob.id, invId, acc.id);
+                                                                }} className="flex items-center gap-3 p-2 active:bg-white dark:active:bg-slate-800 rounded-xl transition-colors">
+                                                                    <LucideIcon name={accStatus ? 'check-circle-2' : 'circle'} size={18} className={accStatus ? 'text-green-500 dark:text-green-400' : 'text-slate-200 dark:text-slate-600'} />
+                                                                    <span className={`text-sm ${accStatus ? 'text-slate-300 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-300'}`}>{acc.name}</span>
+                                                                </div>
+                                                            )
+                                                        })}
                                                     </div>
                                                 )}
                                             </div>
                                         );
                                     })}
                                 </div>
+
+                                {/* --- JOB ABSCHLIESSEN BUTTON --- */}
+                                <div className="pb-8">
+                                    {activeJob.isCompleted ? (
+                                        <button onClick={() => toggleJobCompletion(activeJob.id)} className="w-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 py-5 rounded-[2rem] font-black mt-4 transition-colors flex items-center justify-center gap-2">
+                                            <LucideIcon name="folder-open" size={20}/> Job wieder öffnen
+                                        </button>
+                                    ) : (
+                                        <button 
+                                            onClick={() => {
+                                                if (progressPercent < 100 && jobMode === 'return') {
+                                                    if(confirm('Es sind noch nicht alle Items zurückgecheckt. Job trotzdem abschließen?')) {
+                                                        toggleJobCompletion(activeJob.id);
+                                                    }
+                                                } else {
+                                                    toggleJobCompletion(activeJob.id);
+                                                }
+                                            }} 
+                                            className={`w-full text-white py-5 rounded-[2rem] font-black mt-4 shadow-xl transition-colors flex items-center justify-center gap-2 ${jobMode === 'return' && progressPercent === 100 ? 'bg-green-600 hover:bg-green-700 shadow-green-200 dark:shadow-none' : 'bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 shadow-slate-300 dark:shadow-none'}`}
+                                        >
+                                            <LucideIcon name="check-circle-2" size={20}/> Job als abgeschlossen markieren
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         ) : (
                             <div className="space-y-6">
-                                {activeTab === 'planer' && (
-                                    <>
-                                        <div className="flex justify-between items-center px-2">
-                                            <h2 className="text-xl font-bold">Job Planer</h2>
-                                            <button onClick={() => setShowAddModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-xl transition-colors"><LucideIcon name="plus" /></button>
-                                        </div>
-                                        {jobs.length === 0 && <p className="text-center text-slate-400 dark:text-slate-500 py-10">Keine Jobs geplant.</p>}
-                                        {jobs.sort((a,b) => new Date(a.startDate) - new Date(b.startDate)).map(job => (
-                                            <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm active:scale-95 transition-all cursor-pointer">
-                                                <p className="text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase mb-1">
-                                                    {new Date(job.startDate).toLocaleDateString('de-DE')}
-                                                    {job.startDate !== job.endDate && ` - ${new Date(job.endDate).toLocaleDateString('de-DE')}`}
-                                                </p>
-                                                <h3 className="text-lg font-bold mb-4">{job.name}</h3>
-                                                <div className="flex justify-between items-center">
-                                                    <div className="flex -space-x-2">
-                                                        {Object.keys(job.selectedItemIds).slice(0, 3).map(id => <div key={id} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 border-2 border-white dark:border-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-400 dark:text-slate-300 shadow-sm">{inventory.find(i => i.id === id)?.name?.charAt(0) || '?'}</div>)}
-                                                    </div>
-                                                    <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{Object.keys(job.selectedItemIds).length} Items</div>
-                                                </div>
+                                {activeTab === 'planer' && (() => {
+                                    const pendingJobs = jobs.filter(j => !j.isCompleted).sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
+                                    const completedJobs = jobs.filter(j => j.isCompleted).sort((a,b) => new Date(b.endDate) - new Date(a.endDate));
+
+                                    return (
+                                        <>
+                                            <div className="flex justify-between items-center px-2 mb-2">
+                                                <h2 className="text-xl font-bold">Jobs</h2>
+                                                <button onClick={() => setShowAddModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-xl transition-colors"><LucideIcon name="plus" /></button>
                                             </div>
-                                        ))}
-                                    </>
-                                )}
+                                            
+                                            {/* ANSTEHENDE JOBS */}
+                                            {pendingJobs.length > 0 && <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 px-2 mb-4">Anstehende Jobs</h3>}
+                                            {pendingJobs.length === 0 && completedJobs.length === 0 && <p className="text-center text-slate-400 dark:text-slate-500 py-10">Keine Jobs geplant.</p>}
+                                            {pendingJobs.length === 0 && completedJobs.length > 0 && <p className="text-center text-slate-400 dark:text-slate-500 py-6 italic text-sm">Keine anstehenden Jobs.</p>}
+                                            
+                                            <div className="space-y-4">
+                                                {pendingJobs.map(job => (
+                                                    <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm active:scale-95 transition-all cursor-pointer">
+                                                        <p className="text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase mb-1">
+                                                            {new Date(job.startDate).toLocaleDateString('de-DE')}
+                                                            {job.startDate !== job.endDate && ` - ${new Date(job.endDate).toLocaleDateString('de-DE')}`}
+                                                        </p>
+                                                        <h3 className="text-lg font-bold mb-4">{job.name}</h3>
+                                                        <div className="flex justify-between items-center">
+                                                            <div className="flex -space-x-2">
+                                                                {Object.keys(job.selectedItemIds).slice(0, 3).map(id => {
+                                                                    const invItem = inventory.find(i => i.id === id);
+                                                                    return (
+                                                                        <div key={id} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 border-2 border-white dark:border-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-400 dark:text-slate-300 shadow-sm overflow-hidden">
+                                                                            {invItem?.imageUrl ? <img src={invItem.imageUrl} className="w-full h-full object-cover" /> : (invItem?.name?.charAt(0) || '?')}
+                                                                        </div>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{Object.keys(job.selectedItemIds).length} Items</div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {/* ABGESCHLOSSENE JOBS */}
+                                            {completedJobs.length > 0 && (
+                                                <div className="mt-8">
+                                                    <button onClick={() => setShowCompletedJobs(!showCompletedJobs)} className="flex items-center justify-between w-full px-2 py-4 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+                                                        <h3 className="text-xs font-black uppercase tracking-widest">Abgeschlossene Jobs ({completedJobs.length})</h3>
+                                                        <LucideIcon name={showCompletedJobs ? "chevron-up" : "chevron-down"} size={16} />
+                                                    </button>
+                                                    
+                                                    {showCompletedJobs && (
+                                                        <div className="space-y-4 mt-2">
+                                                            {completedJobs.map(job => (
+                                                                <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 active:scale-95 transition-all cursor-pointer opacity-70 hover:opacity-100">
+                                                                    <div className="flex justify-between items-start mb-1">
+                                                                        <p className="text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase">
+                                                                            {new Date(job.startDate).toLocaleDateString('de-DE')}
+                                                                            {job.startDate !== job.endDate && ` - ${new Date(job.endDate).toLocaleDateString('de-DE')}`}
+                                                                        </p>
+                                                                        <LucideIcon name="check-circle-2" size={16} className="text-green-500 dark:text-green-600" />
+                                                                    </div>
+                                                                    <h3 className="text-lg font-bold mb-4 text-slate-600 dark:text-slate-300 line-through decoration-slate-300 dark:decoration-slate-600">{job.name}</h3>
+                                                                    <div className="flex justify-between items-center">
+                                                                        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{Object.keys(job.selectedItemIds).length} Items eingecheckt</div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()}
                                 
                                 {activeTab === 'kalender' && (
                                     <div className="space-y-6 animate-in fade-in duration-300">
@@ -729,9 +1018,9 @@
                                             }).map(j => (
                                                 <div key={j.id} onClick={() => setActiveJobId(j.id)} className="bg-white dark:bg-slate-800 p-4 rounded-2xl flex justify-between items-center border border-slate-100 dark:border-slate-700 shadow-sm cursor-pointer transition-colors">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-2 h-2 bg-blue-600 dark:bg-blue-400 rounded-full"></div>
+                                                        <div className={`w-2 h-2 rounded-full ${j.isCompleted ? 'bg-green-500' : 'bg-blue-600 dark:bg-blue-400'}`}></div>
                                                         <div className="flex flex-col">
-                                                            <span className="font-bold text-sm">{j.name}</span>
+                                                            <span className={`font-bold text-sm ${j.isCompleted ? 'text-slate-500 dark:text-slate-400 line-through' : ''}`}>{j.name}</span>
                                                             <span className="text-[10px] text-slate-400 dark:text-slate-500">{new Date(j.startDate).toLocaleDateString('de-DE')} {j.startDate !== j.endDate && `- ${new Date(j.endDate).toLocaleDateString('de-DE')}`}</span>
                                                         </div>
                                                     </div>
@@ -746,7 +1035,7 @@
                                     <div className="space-y-4">
                                         <div className="flex justify-between items-center px-2 mb-6">
                                             <h2 className="text-xl font-bold">Lager</h2>
-                                            <button onClick={() => {setEditingItem(null); setItemType('item'); setFormData({name: "", category: categories[0] || "Sonstiges", quantity: 1, bundleItems: {}}); setShowAddModal(true);}} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-xl shadow-lg transition-colors"><LucideIcon name="plus" /></button>
+                                            <button onClick={() => {setEditingItem(null); setItemType('item'); setFormData({name: "", category: categories[0] || "Sonstiges", quantity: 1, bundleItems: {}, imageUrl: ""}); setShowAddModal(true);}} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-xl shadow-lg transition-colors"><LucideIcon name="plus" /></button>
                                         </div>
                                         {inventory.length === 0 && <p className="text-center text-slate-400 dark:text-slate-500 py-10">Lager ist leer.</p>}
                                         
@@ -759,21 +1048,26 @@
                                             const renderItem = (item) => (
                                                 <div key={item.id} className={`bg-white dark:bg-slate-800 p-5 rounded-[2rem] border ${item.isBundle ? 'border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-900/10' : 'border-slate-100 dark:border-slate-700'} flex flex-col gap-4 shadow-sm transition-colors`}>
                                                     <div className="flex justify-between items-start">
-                                                        <div>
-                                                            {item.isBundle ? (
-                                                                <p className="text-[10px] font-black text-purple-500 dark:text-purple-400 uppercase flex items-center gap-1"><LucideIcon name="layers" size={12}/> Bundle</p>
-                                                            ) : (
-                                                                <p className="text-[10px] font-black text-blue-500 dark:text-blue-400 uppercase">{item.category}</p>
-                                                            )}
-                                                            <h3 className="font-bold">{item.name}</h3>
-                                                            {item.isBundle && (
-                                                                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-                                                                    Enthält: {Object.entries(item.bundleItems || {}).map(([bId, qty]) => `${qty}x ${inventory.find(i=>i.id===bId)?.name}`).join(', ')}
-                                                                </p>
-                                                            )}
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                                                                {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" /> : <LucideIcon name={item.isBundle ? "layers" : "image"} size={18} className="text-slate-400 dark:text-slate-500" />}
+                                                            </div>
+                                                            <div>
+                                                                {item.isBundle ? (
+                                                                    <p className="text-[10px] font-black text-purple-500 dark:text-purple-400 uppercase flex items-center gap-1"><LucideIcon name="layers" size={12}/> Bundle</p>
+                                                                ) : (
+                                                                    <p className="text-[10px] font-black text-blue-500 dark:text-blue-400 uppercase">{item.category}</p>
+                                                                )}
+                                                                <h3 className="font-bold">{item.name}</h3>
+                                                                {item.isBundle && (
+                                                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                                                                        Enthält: {Object.entries(item.bundleItems || {}).map(([bId, qty]) => `${qty}x ${inventory.find(i=>i.id===bId)?.name}`).join(', ')}
+                                                                    </p>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                         <div className="flex gap-2">
-                                                            <button onClick={() => {setEditingItem(item); setItemType(item.isBundle ? 'bundle' : 'item'); setFormData({name: item.name, category: item.category, quantity: item.quantity, bundleItems: item.bundleItems || {}}); setShowAddModal(true);}} className="text-slate-400 dark:text-slate-500 p-1 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"><LucideIcon name="edit-2" size={16} /></button>
+                                                            <button onClick={() => {setEditingItem(item); setItemType(item.isBundle ? 'bundle' : 'item'); setFormData({name: item.name, category: item.category, quantity: item.quantity, bundleItems: item.bundleItems || {}, imageUrl: item.imageUrl || ""}); setShowAddModal(true);}} className="text-slate-400 dark:text-slate-500 p-1 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"><LucideIcon name="edit-2" size={16} /></button>
                                                             <button onClick={() => confirmDeleteItem(item.id)} className="text-red-300 dark:text-red-400 p-1 hover:text-red-500 transition-colors"><LucideIcon name="trash-2" size={16} /></button>
                                                         </div>
                                                     </div>
@@ -852,8 +1146,8 @@
                             <span className="text-[9px] font-black uppercase">Lager</span>
                         </button>
                         <button onClick={() => {setActiveTab('planer'); setActiveJobId(null);}} className={`flex flex-col items-center gap-1 flex-1 ${activeTab === 'planer' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
-                            <LucideIcon name="list" />
-                            <span className="text-[9px] font-black uppercase">Liste</span>
+                            <LucideIcon name="briefcase" />
+                            <span className="text-[9px] font-black uppercase">Jobs</span>
                         </button>
                         <button onClick={() => {setActiveTab('kalender'); setActiveJobId(null);}} className={`flex flex-col items-center gap-1 flex-1 ${activeTab === 'kalender' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
                             <LucideIcon name="calendar" />
@@ -987,6 +1281,11 @@
                                             <input className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-4 mt-1 font-bold outline-none dark:text-white dark:placeholder-slate-500" placeholder={itemType === 'bundle' ? "z.B. Podcast Koffer" : "z.B. Stativ"} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
                                         </div>
                                         
+                                        <div>
+                                            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1">Bild-URL (Optional)</label>
+                                            <input className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-4 mt-1 font-bold outline-none dark:text-white dark:placeholder-slate-500" placeholder="https://link-zum-bild.jpg" value={formData.imageUrl || ''} onChange={e => setFormData({...formData, imageUrl: e.target.value})} />
+                                        </div>
+
                                         {itemType === 'item' && (
                                             <div>
                                                 <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1">Kategorie</label>
@@ -1062,8 +1361,13 @@
                                                     if (item.isBundle) {
                                                         return (
                                                             <div key={item.id} className="p-3 rounded-xl border border-purple-100 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-900/10 flex justify-between items-center mb-2">
-                                                                <div className="flex flex-col">
-                                                                    <span className="font-bold text-sm dark:text-white">{item.name}</span>
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-8 h-8 shrink-0 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center overflow-hidden">
+                                                                        {item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-cover" /> : <LucideIcon name="layers" size={14} className="text-purple-500 dark:text-purple-400" />}
+                                                                    </div>
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-bold text-sm dark:text-white">{item.name}</span>
+                                                                    </div>
                                                                 </div>
                                                                 <button type="button" onClick={() => addBundleToJob(item)} className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 text-xs font-bold px-3 py-1.5 rounded-lg active:scale-95 transition-transform">
                                                                     Bundle laden
@@ -1076,9 +1380,14 @@
                                                         
                                                         return (
                                                             <div key={item.id} className={`p-3 rounded-xl border flex justify-between items-center transition-all mb-2 ${selected > 0 ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' : 'bg-white border-slate-100 dark:bg-slate-800 dark:border-slate-700'}`}>
-                                                                <div className="flex flex-col">
-                                                                    <span className="font-bold text-sm dark:text-white">{item.name}</span>
-                                                                    <span className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500">Frei: {available}</span>
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-8 h-8 shrink-0 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                                                                        {item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-cover" /> : <LucideIcon name="image" size={14} className="text-slate-400 dark:text-slate-500" />}
+                                                                    </div>
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-bold text-sm dark:text-white">{item.name}</span>
+                                                                        <span className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500">Frei: {available}</span>
+                                                                    </div>
                                                                 </div>
                                                                 <div className="flex items-center gap-3">
                                                                     <button type="button" disabled={selected === 0} onClick={() => {
