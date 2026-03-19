@@ -31,9 +31,12 @@
     
     <style>
         body { -webkit-tap-highlight-color: transparent; }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; }
+        .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: #94a3b8; }
+        .dark .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: #64748b; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
     </style>
 </head>
@@ -112,9 +115,9 @@
             const [inventory, setInventory] = useState([]);
             const [jobs, setJobs] = useState([]);
 
-            const [activeTab, setActiveTab] = useState('planer'); // Intern bleibt es 'planer', im UI 'Jobs'
+            const [activeTab, setActiveTab] = useState('planer'); 
             const [activeJobId, setActiveJobId] = useState(null);
-            const [jobMode, setJobMode] = useState('packen'); // 'packen' oder 'return'
+            const [jobMode, setJobMode] = useState('packen'); 
             
             const [showAddModal, setShowAddModal] = useState(false);
             const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -127,6 +130,7 @@
             const [showCancelledJobs, setShowCancelledJobs] = useState(false); 
 
             const [currentDate, setCurrentDate] = useState(new Date());
+            const [calendarView, setCalendarView] = useState('month'); 
             const [dialog, setDialog] = useState(null);
             
             // Form States
@@ -140,11 +144,11 @@
 
             // --- STANDARD KATEGORIEN ---
             const DEFAULT_CATEGORIES = [
-                'Fokus', 
-                'Kabel', 
-                'Strom', 
-                'Rigging', 
-                'Monitoring'
+                'Kamera',
+                'Optik',
+                'Audio',
+                'Licht',
+                'Grip'
             ];
 
             // --- 1. FIREBASE INITIALISIERUNG ---
@@ -230,7 +234,6 @@
                         if (data.categories) setCategories(data.categories);
                         if (data.inventory) setInventory(data.inventory);
                         
-                        // Jobs Migration
                         if (data.jobs) {
                             const migratedJobs = data.jobs.map(j => {
                                 let start = j.startDate || j.date || todayStr;
@@ -249,13 +252,11 @@
                                 
                                 Object.keys(newSelected || {}).forEach(id => {
                                     const qty = newSelected[id] || 1;
-                                    // Migration für Packing
                                     if (typeof newPacking[id] === 'string') {
                                         newPacking[id] = { packed: (newPacking[id] === 'gepackt' || newPacking[id] === 'im-einsatz') ? qty : 0, status: newPacking[id] };
                                     } else if (!newPacking[id]) {
                                         newPacking[id] = { packed: 0, status: 'fehlt' };
                                     }
-                                    // Migration für Return
                                     if (!newReturn[id]) {
                                         newReturn[id] = { returned: 0, status: 'fehlt' };
                                     }
@@ -319,14 +320,12 @@
             // --- APP LOGIK & HILFSFUNKTIONEN ---
             const activeJob = useMemo(() => jobs.find(j => j.id === activeJobId), [jobs, activeJobId]);
             
-            // Setze Job Mode auf Packen, wenn ein anderer Job geöffnet wird
             useEffect(() => {
                 if (activeJobId && activeJob) {
                     setJobMode(activeJob.status === 'completed' ? 'return' : 'packen');
                 }
             }, [activeJobId]);
 
-            // Benachrichtigungen: Jobs die morgen starten
             const upcomingJobs = useMemo(() => {
                 const tomorrow = new Date();
                 tomorrow.setDate(tomorrow.getDate() + 1);
@@ -517,21 +516,18 @@
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 
-                // Titel
                 doc.setFontSize(22);
-                doc.setTextColor(30, 41, 59); // slate-800
+                doc.setTextColor(30, 41, 59);
                 doc.text(`Packliste: ${activeJob.name}`, 14, 22);
                 
-                // Datum & Meta
                 doc.setFontSize(11);
-                doc.setTextColor(100, 116, 139); // slate-500
+                doc.setTextColor(100, 116, 139);
                 const startDateStr = new Date(activeJob.startDate).toLocaleDateString('de-DE');
                 const endDateStr = new Date(activeJob.endDate).toLocaleDateString('de-DE');
                 const dateStr = activeJob.startDate !== activeJob.endDate ? `${startDateStr} bis ${endDateStr}` : startDateStr;
                 doc.text(`Zeitraum: ${dateStr}`, 14, 30);
                 doc.text(`Exportiert am: ${new Date().toLocaleDateString('de-DE')} ${new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute:'2-digit'})} Uhr`, 14, 36);
                 
-                // Tabellen-Daten
                 const tableData = [];
                 Object.entries(activeJob.selectedItemIds).forEach(([invId, reqQty]) => {
                     const item = inventory.find(i => i.id === invId);
@@ -541,8 +537,8 @@
                         `${reqQty}x`, 
                         item.name, 
                         item.category || 'Sonstiges',
-                        '', // Check Out Platzhalter
-                        ''  // Check In Platzhalter
+                        '', 
+                        ''  
                     ]);
                     
                     if (item.accessories && item.accessories.length > 0) {
@@ -558,29 +554,27 @@
                     }
                 });
                 
-                // AutoTable generieren
                 doc.autoTable({
                     startY: 44,
                     head: [['Menge', 'Artikel', 'Kategorie', 'Out', 'In']],
                     body: tableData,
                     theme: 'grid',
-                    headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold', halign: 'left' }, // blue-600
+                    headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold', halign: 'left' },
                     bodyStyles: { textColor: [51, 65, 85] },
                     alternateRowStyles: { fillColor: [248, 250, 252] },
                     columnStyles: {
                         0: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
                         1: { cellWidth: 'auto', halign: 'left' },
                         2: { cellWidth: 35, textColor: [100, 116, 139], halign: 'left' },
-                        3: { cellWidth: 15, halign: 'center' }, // Out Spalte
-                        4: { cellWidth: 15, halign: 'center' }  // In Spalte
+                        3: { cellWidth: 15, halign: 'center' },
+                        4: { cellWidth: 15, halign: 'center' } 
                     },
                     didDrawCell: function(data) {
-                        // Zeichne manuell kleine Checkbox-Quadrate in die Spalten 'Out' (3) und 'In' (4)
                         if ((data.column.index === 3 || data.column.index === 4) && data.section === 'head') {
                              doc.setTextColor(255, 255, 255);
                         }
                         if ((data.column.index === 3 || data.column.index === 4) && data.section === 'body') {
-                            doc.setDrawColor(203, 213, 225); // slate-300
+                            doc.setDrawColor(203, 213, 225); 
                             doc.setLineWidth(0.5);
                             const boxSize = 6;
                             const x = data.cell.x + (data.cell.width / 2) - (boxSize / 2);
@@ -591,7 +585,6 @@
                     styles: { fontSize: 10, cellPadding: 4 }
                 });
                 
-                // Speichern mit dynamischem Dateinamen
                 doc.save(`Packliste_${activeJob.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
             };
 
@@ -767,10 +760,12 @@
                 return days;
             }, [currentDate]);
 
-            const getJobsForDate = (date) => {
-                if (!date) return [];
-                const dStr = date.toISOString().split('T')[0];
-                return jobs.filter(j => j.startDate <= dStr && j.endDate >= dStr);
+            const isJobInCurrentMonth = (j) => {
+                const s = new Date(j.startDate);
+                const e = new Date(j.endDate);
+                const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+                const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+                return s <= endOfMonth && e >= startOfMonth;
             };
 
             useEffect(() => {
@@ -783,7 +778,7 @@
             }, [categories]);
 
             let totalRequiredQty = 0;
-            let totalActionQty = 0; // Gepackt oder Zurückgegeben, je nach Modus
+            let totalActionQty = 0; 
             if (activeJob) {
                 Object.entries(activeJob.selectedItemIds).forEach(([id, reqQty]) => {
                     totalRequiredQty += reqQty;
@@ -808,27 +803,40 @@
             }
 
             return (
-                <div className="min-h-screen bg-gray-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 pb-32 md:pb-8 md:pl-28 font-sans overflow-x-hidden transition-colors duration-200">
+                <div className="min-h-screen bg-gray-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 pb-32 md:pb-8 lg:pl-[260px] font-sans overflow-x-hidden transition-all duration-300">
+                    
+                    {/* --- TOP HEADER (Settings / Cloud) --- */}
                     <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 border-b border-slate-100 dark:border-slate-800 px-6 pt-12 pb-5 md:pt-6 transition-colors duration-200">
-                        <div className="flex justify-between items-center max-w-7xl mx-auto">
-                            <h1 className="text-2xl font-black text-slate-800 dark:text-white flex items-center gap-2">
+                        <div className="flex justify-between items-center max-w-screen-2xl mx-auto w-full">
+                            {/* Logo Mobile */}
+                            <h1 className="text-2xl font-black text-slate-800 dark:text-white flex items-center gap-2 lg:hidden">
                                 <LucideIcon name="package" className="text-blue-600 dark:text-blue-400" /> TechPack
                             </h1>
-                            <div className="flex gap-2 items-center">
+                            
+                            {/* Page Title Desktop */}
+                            <div className="hidden lg:block text-xl font-black text-slate-800 dark:text-slate-200 tracking-tight">
+                                {activeTab === 'lager' && "Lagerbestand"}
+                                {activeTab === 'planer' && "Job Planer"}
+                                {activeTab === 'kalender' && "Kalender"}
+                                {activeTab === 'stats' && "Statistiken"}
+                                {activeTab === 'management' && "Management"}
+                            </div>
+
+                            <div className="flex gap-2 items-center ml-auto">
                                 <div className="mr-1 hidden sm:block">
                                     {syncStatus === 'synced' && <LucideIcon name="cloud-check" size={20} className="text-green-500 dark:text-green-400" />}
                                     {syncStatus === 'syncing' && <LucideIcon name="refresh-cw" size={18} className="text-blue-500 dark:text-blue-400 animate-spin" />}
                                     {syncStatus === 'no-config' && <LucideIcon name="cloud-off" size={20} className="text-slate-400 dark:text-slate-500" onClick={() => setDialog({ type: 'alert', message: "Cloud Sync ist inaktiv. Bitte Firebase Config ergänzen." })} />}
                                     {syncStatus === 'error' && <LucideIcon name="alert-triangle" size={20} className="text-red-500 dark:text-red-400" onClick={() => setDialog({ type: 'alert', message: "Fehler bei der Verbindung zur Cloud." })} />}
                                 </div>
-                                <button onClick={() => setShowSettingsModal(true)} className="bg-slate-100 dark:bg-slate-800 p-2.5 rounded-full text-slate-400 dark:text-slate-400 transition-colors">
+                                <button onClick={() => setShowSettingsModal(true)} className="bg-slate-100 dark:bg-slate-800 p-2.5 rounded-full text-slate-400 dark:text-slate-400 transition-colors hover:bg-slate-200 dark:hover:bg-slate-700">
                                     <LucideIcon name="settings" size={20} />
                                 </button>
                             </div>
                         </div>
                     </header>
 
-                    <main className="px-4 mt-8 max-w-7xl mx-auto md:px-8 w-full">
+                    <main className="px-4 mt-8 max-w-screen-2xl mx-auto md:px-8 w-full">
                         {upcomingJobs.length > 0 && activeTab === 'planer' && !activeJobId && (
                             <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-5 rounded-[2rem] mb-8 shadow-xl shadow-blue-200/50 dark:shadow-none flex items-center gap-4 animate-in slide-in-from-top duration-500 w-full lg:w-1/2">
                                 <div className="bg-white/20 p-3 rounded-2xl shrink-0">
@@ -841,179 +849,220 @@
                             </div>
                         )}
 
+                        {/* =========================================
+                            JOB DETAIL ANSICHT (PACK-MODUS)
+                        ========================================= */}
                         {activeJobId && activeJob ? (
                             <div className="animate-in slide-in-from-right duration-300">
                                 <button onClick={() => setActiveJobId(null)} className="flex items-center gap-2 text-slate-400 dark:text-slate-500 font-bold text-xs uppercase mb-6 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
-                                    <LucideIcon name="arrow-left" size={14} /> Zurück
+                                    <LucideIcon name="arrow-left" size={14} /> Zurück zur Übersicht
                                 </button>
                                 
-                                <div className="flex flex-col sm:flex-row justify-between items-start mb-8 gap-4">
-                                    <div>
-                                        {activeJob.status === 'completed' && (
-                                            <span className="inline-block bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 text-[10px] font-black uppercase px-2 py-1 rounded-md mb-2">Abgeschlossen</span>
-                                        )}
-                                        {activeJob.status === 'cancelled' && (
-                                            <span className="inline-block bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400 text-[10px] font-black uppercase px-2 py-1 rounded-md mb-2">Storniert</span>
-                                        )}
-                                        <h2 className="text-3xl md:text-4xl font-black mb-1">{activeJob.name}</h2>
-                                        <p className="text-blue-600 dark:text-blue-400 text-sm md:text-base font-bold">
-                                            {new Date(activeJob.startDate).toLocaleDateString('de-DE')} 
-                                            {activeJob.startDate !== activeJob.endDate && ` - ${new Date(activeJob.endDate).toLocaleDateString('de-DE')}`}
-                                        </p>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <button onClick={exportPDF} title="PDF Packliste herunterladen" className="text-blue-600 dark:text-blue-400 p-2.5 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-xl transition-colors"><LucideIcon name="file-down" size={20} /></button>
-                                        {activeJob.status === 'active' && (
-                                            <button onClick={() => confirmCancelJob(activeJob.id)} title="Job stornieren" className="text-orange-400 dark:text-orange-500 p-2.5 bg-orange-50 dark:bg-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/50 rounded-xl transition-colors"><LucideIcon name="ban" size={20} /></button>
-                                        )}
-                                        <button onClick={() => confirmDeleteJob(activeJob.id)} title="Job löschen" className="text-red-400 dark:text-red-500 p-2.5 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-xl transition-colors"><LucideIcon name="trash-2" size={20} /></button>
-                                    </div>
-                                </div>
+                                {/* WIDESCREEN SPLIT LAYOUT */}
+                                <div className="flex flex-col xl:flex-row gap-8 items-start">
+                                    
+                                    {/* LINKE SPALTE: JOB INFO & STEUERUNG (Sticky auf Desktop) */}
+                                    <div className="w-full xl:w-[380px] 2xl:w-[450px] shrink-0 space-y-6 xl:sticky xl:top-[120px]">
+                                        
+                                        {/* Job Header Card */}
+                                        <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm">
+                                            {activeJob.status === 'completed' && (
+                                                <span className="inline-block bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 text-[10px] font-black uppercase px-2 py-1 rounded-md mb-3">Abgeschlossen</span>
+                                            )}
+                                            {activeJob.status === 'cancelled' && (
+                                                <span className="inline-block bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400 text-[10px] font-black uppercase px-2 py-1 rounded-md mb-3">Storniert</span>
+                                            )}
+                                            
+                                            <h2 className="text-3xl font-black mb-2 leading-tight">{activeJob.name}</h2>
+                                            
+                                            <p className="text-blue-600 dark:text-blue-400 text-sm font-bold flex items-center gap-2 mb-6">
+                                                <LucideIcon name="calendar" size={16} />
+                                                {new Date(activeJob.startDate).toLocaleDateString('de-DE')} 
+                                                {activeJob.startDate !== activeJob.endDate && ` - ${new Date(activeJob.endDate).toLocaleDateString('de-DE')}`}
+                                            </p>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8 items-center">
-                                    {/* --- PACKEN / RÜCKGABE TOGGLE --- */}
-                                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl md:col-span-1">
-                                        <button onClick={() => setJobMode('packen')} className={`flex-1 flex items-center justify-center gap-2 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${jobMode === 'packen' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
-                                            <LucideIcon name="package-open" size={16}/> Check Out
-                                        </button>
-                                        <button onClick={() => setJobMode('return')} className={`flex-1 flex items-center justify-center gap-2 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${jobMode === 'return' ? 'bg-white dark:bg-slate-700 shadow-sm text-purple-600 dark:text-purple-400' : 'text-slate-400 dark:text-slate-500'}`}>
-                                            <LucideIcon name="package-check" size={16}/> Check In
-                                        </button>
-                                    </div>
-
-                                    {/* --- PROGRESS CARD --- */}
-                                    <div className={`md:col-span-1 lg:col-span-2 bg-gradient-to-br rounded-[2.5rem] p-7 text-white shadow-xl transition-colors ${jobMode === 'packen' ? 'from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800 shadow-blue-200 dark:shadow-none' : 'from-purple-600 to-fuchsia-700 dark:from-purple-700 dark:to-fuchsia-800 shadow-purple-200 dark:shadow-none'}`}>
-                                        <div className="flex justify-between items-start mb-6">
-                                            <div>
-                                                <p className="opacity-80 text-xs font-black uppercase tracking-widest mb-1">
-                                                    {jobMode === 'packen' ? 'Check-Out Fortschritt' : 'Check-In Fortschritt'}
-                                                </p>
-                                                <h2 className="text-4xl font-black">{progressPercent}%</h2>
-                                            </div>
-                                            <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md">
-                                                <LucideIcon name={jobMode === 'packen' ? "package" : "check-circle-2"} size={24} />
+                                            {/* Aktions-Buttons */}
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <button onClick={exportPDF} title="PDF Packliste herunterladen" className="flex-1 flex justify-center items-center gap-2 text-blue-600 dark:text-blue-400 p-3 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-xl transition-colors font-bold text-sm"><LucideIcon name="file-down" size={18} /> PDF Export</button>
+                                                {activeJob.status === 'active' && (
+                                                    <button onClick={() => confirmCancelJob(activeJob.id)} title="Job stornieren" className="p-3 text-orange-400 dark:text-orange-500 bg-orange-50 dark:bg-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/50 rounded-xl transition-colors"><LucideIcon name="ban" size={18} /></button>
+                                                )}
+                                                <button onClick={() => confirmDeleteJob(activeJob.id)} title="Job löschen" className="p-3 text-red-400 dark:text-red-500 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-xl transition-colors"><LucideIcon name="trash-2" size={18} /></button>
                                             </div>
                                         </div>
-                                        <div className="w-full bg-black/20 h-2.5 rounded-full overflow-hidden">
-                                            <div
-                                                className="bg-white h-full transition-all duration-1000 ease-out rounded-full"
-                                                style={{ width: `${progressPercent}%` }}
-                                            />
+
+                                        {/* Packen / Rückgabe Toggle */}
+                                        <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
+                                            <button onClick={() => setJobMode('packen')} className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${jobMode === 'packen' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                                                <LucideIcon name="package-open" size={16}/> Check Out
+                                            </button>
+                                            <button onClick={() => setJobMode('return')} className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${jobMode === 'return' ? 'bg-white dark:bg-slate-700 shadow-sm text-purple-600 dark:text-purple-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                                                <LucideIcon name="package-check" size={16}/> Check In
+                                            </button>
                                         </div>
-                                        <p className="mt-5 text-[10px] font-black opacity-80 uppercase tracking-widest">
-                                            {totalActionQty} von {totalRequiredQty} Items {jobMode === 'packen' ? 'ausgecheckt' : 'eingecheckt'}
-                                        </p>
+
+                                        {/* Progress Card */}
+                                        <div className={`bg-gradient-to-br rounded-[2.5rem] p-7 text-white shadow-xl transition-colors ${jobMode === 'packen' ? 'from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800 shadow-blue-200 dark:shadow-none' : 'from-purple-600 to-fuchsia-700 dark:from-purple-700 dark:to-fuchsia-800 shadow-purple-200 dark:shadow-none'}`}>
+                                            <div className="flex justify-between items-start mb-6">
+                                                <div>
+                                                    <p className="opacity-80 text-xs font-black uppercase tracking-widest mb-1">
+                                                        {jobMode === 'packen' ? 'Fortschritt' : 'Rückgabe'}
+                                                    </p>
+                                                    <h2 className="text-4xl font-black">{progressPercent}%</h2>
+                                                </div>
+                                                <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md">
+                                                    <LucideIcon name={jobMode === 'packen' ? "package" : "check-circle-2"} size={24} />
+                                                </div>
+                                            </div>
+                                            <div className="w-full bg-black/20 h-2.5 rounded-full overflow-hidden">
+                                                <div
+                                                    className="bg-white h-full transition-all duration-1000 ease-out rounded-full"
+                                                    style={{ width: `${progressPercent}%` }}
+                                                />
+                                            </div>
+                                            <p className="mt-5 text-[10px] font-black opacity-80 uppercase tracking-widest">
+                                                {totalActionQty} von {totalRequiredQty} Items {jobMode === 'packen' ? 'ausgecheckt' : 'eingecheckt'}
+                                            </p>
+                                        </div>
+
+                                        {/* Job Abschließen Button - Desktop Version (in Sidebar) */}
+                                        <div className="hidden xl:block">
+                                            {activeJob.status === 'completed' || activeJob.status === 'cancelled' ? (
+                                                <button onClick={() => changeJobStatus(activeJob.id, 'active')} className="w-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 py-5 rounded-[2rem] font-black mt-2 transition-colors flex items-center justify-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-700">
+                                                    <LucideIcon name="folder-open" size={20}/> Job wieder öffnen
+                                                </button>
+                                            ) : (
+                                                <button 
+                                                    onClick={() => {
+                                                        if (progressPercent < 100 && jobMode === 'return') {
+                                                            if(confirm('Es sind noch nicht alle Items zurückgecheckt. Job trotzdem abschließen?')) {
+                                                                changeJobStatus(activeJob.id, 'completed');
+                                                            }
+                                                        } else {
+                                                            changeJobStatus(activeJob.id, 'completed');
+                                                        }
+                                                    }} 
+                                                    className={`w-full text-white py-5 rounded-[2rem] font-black mt-2 shadow-xl transition-colors flex items-center justify-center gap-2 ${jobMode === 'return' && progressPercent === 100 ? 'bg-green-600 hover:bg-green-700 shadow-green-200 dark:shadow-none' : 'bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 shadow-slate-300 dark:shadow-none'}`}
+                                                >
+                                                    <LucideIcon name="check-circle-2" size={20}/> Job als abgeschlossen markieren
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
 
-                                {/* GROUPED PACKING LIST */}
-                                <div className="space-y-10 mb-8">
-                                    {Object.entries(packedItemsGrouped).map(([cat, items]) => (
-                                        <div key={cat} className="space-y-4">
-                                            <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 ml-2 border-b border-slate-200 dark:border-slate-800 pb-2 flex items-center gap-2">
-                                                <LucideIcon name="layers" size={16} /> {cat}
-                                            </h3>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                                {items.map(({ invId, requiredQty, item }) => {
-                                                    const packInfo = jobMode === 'packen' 
-                                                        ? (activeJob.packingStatus[invId] || { packed: 0, status: 'fehlt' })
-                                                        : (activeJob.returnStatus?.[invId] || { returned: 0, status: 'fehlt' });
+                                    {/* RECHTE SPALTE: PACKLISTEN-GRID */}
+                                    <div className="flex-1 w-full space-y-10">
+                                        {Object.entries(packedItemsGrouped).map(([cat, items]) => (
+                                            <div key={cat} className="space-y-4">
+                                                <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 ml-2 border-b border-slate-200 dark:border-slate-800 pb-2 flex items-center gap-2">
+                                                    <LucideIcon name="layers" size={16} /> {cat}
+                                                </h3>
+                                                {/* Grid Layout für die Items, optimal für breite Screens */}
+                                                <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+                                                    {items.map(({ invId, requiredQty, item }) => {
+                                                        const packInfo = jobMode === 'packen' 
+                                                            ? (activeJob.packingStatus[invId] || { packed: 0, status: 'fehlt' })
+                                                            : (activeJob.returnStatus?.[invId] || { returned: 0, status: 'fehlt' });
 
-                                                    const currentCount = jobMode === 'packen' ? packInfo.packed : packInfo.returned;
-                                                    const isExpanded = expandedItems[invId];
-                                                    
-                                                    // Farben für den Status
-                                                    const btnColor = (packInfo.status === 'gepackt' || packInfo.status === 'zurück') ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' : 
-                                                                    packInfo.status === 'im-einsatz' ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' : 
-                                                                    packInfo.status === 'teilweise' ? 'bg-orange-100 text-orange-500 dark:bg-orange-900/30 dark:text-orange-400' :
-                                                                    'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-500';
-                                                    
-                                                    const iconName = (packInfo.status === 'gepackt' || packInfo.status === 'zurück') ? 'check-circle-2' : 
-                                                                    packInfo.status === 'im-einsatz' ? 'zap' : 
-                                                                    packInfo.status === 'teilweise' ? 'minus-circle' : 'circle';
+                                                        const currentCount = jobMode === 'packen' ? packInfo.packed : packInfo.returned;
+                                                        const isExpanded = expandedItems[invId];
+                                                        
+                                                        const btnColor = (packInfo.status === 'gepackt' || packInfo.status === 'zurück') ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' : 
+                                                                        packInfo.status === 'im-einsatz' ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' : 
+                                                                        packInfo.status === 'teilweise' ? 'bg-orange-100 text-orange-500 dark:bg-orange-900/30 dark:text-orange-400' :
+                                                                        'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-500';
+                                                        
+                                                        const iconName = (packInfo.status === 'gepackt' || packInfo.status === 'zurück') ? 'check-circle-2' : 
+                                                                        packInfo.status === 'im-einsatz' ? 'zap' : 
+                                                                        packInfo.status === 'teilweise' ? 'minus-circle' : 'circle';
 
-                                                    return (
-                                                        <div key={invId} className="bg-white dark:bg-slate-800 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden transition-colors h-fit">
-                                                            <div className="p-4 flex items-center gap-4">
-                                                                <button onClick={() => {
-                                                                    if (jobMode === 'packen') togglePackingStatus(activeJob.id, invId, requiredQty);
-                                                                    else toggleReturnStatus(activeJob.id, invId, requiredQty);
-                                                                }} className={`p-3 rounded-2xl ${btnColor} transition-colors flex-shrink-0`}>
-                                                                    <LucideIcon name={iconName} />
-                                                                </button>
-                                                                <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-center overflow-hidden">
-                                                                    {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" /> : <LucideIcon name={item.isBundle ? "layers" : "image"} size={18} className="text-slate-400 dark:text-slate-500" />}
-                                                                </div>
-                                                                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setExpandedItems({...expandedItems, [invId]: !isExpanded})}>
-                                                                    <h4 className={`font-bold truncate ${(packInfo.status === 'gepackt' || packInfo.status === 'zurück') ? 'text-slate-300 dark:text-slate-500 line-through' : 'text-slate-800 dark:text-slate-100'}`}>{item.name}</h4>
-                                                                    <div className="flex items-center gap-2 mt-0.5">
-                                                                        <span className={`text-[10px] font-black px-1.5 rounded-md ${currentCount === requiredQty ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
-                                                                            {currentCount} / {requiredQty}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                                {item.accessories && item.accessories.length > 0 && (
-                                                                    <button onClick={() => setExpandedItems({...expandedItems, [invId]: !isExpanded})} className="text-slate-300 dark:text-slate-600 p-2 hover:text-slate-500 transition-colors">
-                                                                        <LucideIcon name={isExpanded ? "chevron-up" : "chevron-down"} size={20} />
+                                                        return (
+                                                            <div key={invId} className="bg-white dark:bg-slate-800 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden transition-colors h-fit flex flex-col">
+                                                                <div className="p-4 flex items-center gap-4">
+                                                                    <button onClick={() => {
+                                                                        if (jobMode === 'packen') togglePackingStatus(activeJob.id, invId, requiredQty);
+                                                                        else toggleReturnStatus(activeJob.id, invId, requiredQty);
+                                                                    }} className={`p-3 rounded-2xl ${btnColor} transition-colors flex-shrink-0`}>
+                                                                        <LucideIcon name={iconName} />
                                                                     </button>
+                                                                    <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                                                                        {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" /> : <LucideIcon name={item.isBundle ? "layers" : "image"} size={18} className="text-slate-400 dark:text-slate-500" />}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setExpandedItems({...expandedItems, [invId]: !isExpanded})}>
+                                                                        <h4 className={`font-bold truncate ${(packInfo.status === 'gepackt' || packInfo.status === 'zurück') ? 'text-slate-300 dark:text-slate-500 line-through' : 'text-slate-800 dark:text-slate-100'}`}>{item.name}</h4>
+                                                                        <div className="flex items-center gap-2 mt-0.5">
+                                                                            <span className={`text-[10px] font-black px-1.5 rounded-md ${currentCount === requiredQty ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                                                                                {currentCount} / {requiredQty}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    {item.accessories && item.accessories.length > 0 && (
+                                                                        <button onClick={() => setExpandedItems({...expandedItems, [invId]: !isExpanded})} className="text-slate-300 dark:text-slate-600 p-2 hover:text-slate-500 transition-colors">
+                                                                            <LucideIcon name={isExpanded ? "chevron-up" : "chevron-down"} size={20} />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                                {isExpanded && item.accessories && item.accessories.length > 0 && (
+                                                                    <div className="bg-slate-50 dark:bg-slate-900/50 p-4 border-t border-slate-100 dark:border-slate-700 space-y-2 flex-1">
+                                                                        {item.accessories.map(acc => {
+                                                                            const accStatus = jobMode === 'packen' 
+                                                                                ? (activeJob.accessoryStatus[invId]?.[acc.id] === 'gepackt')
+                                                                                : (activeJob.returnAccessoryStatus?.[invId]?.[acc.id] === 'zurück');
+                                                                            
+                                                                            return (
+                                                                                <div key={acc.id} onClick={() => {
+                                                                                    if(jobMode === 'packen') toggleAccStatus(activeJob.id, invId, acc.id);
+                                                                                    else toggleReturnAccStatus(activeJob.id, invId, acc.id);
+                                                                                }} className="flex items-center gap-3 p-2 active:bg-white dark:active:bg-slate-800 rounded-xl transition-colors cursor-pointer">
+                                                                                    <LucideIcon name={accStatus ? 'check-circle-2' : 'circle'} size={18} className={accStatus ? 'text-green-500 dark:text-green-400' : 'text-slate-200 dark:text-slate-600'} />
+                                                                                    <span className={`text-sm ${accStatus ? 'text-slate-300 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-300'}`}>{acc.name}</span>
+                                                                                </div>
+                                                                            )
+                                                                        })}
+                                                                    </div>
                                                                 )}
                                                             </div>
-                                                            {isExpanded && item.accessories && item.accessories.length > 0 && (
-                                                                <div className="bg-slate-50 dark:bg-slate-900/50 p-4 border-t border-slate-100 dark:border-slate-700 space-y-2">
-                                                                    {item.accessories.map(acc => {
-                                                                        const accStatus = jobMode === 'packen' 
-                                                                            ? (activeJob.accessoryStatus[invId]?.[acc.id] === 'gepackt')
-                                                                            : (activeJob.returnAccessoryStatus?.[invId]?.[acc.id] === 'zurück');
-                                                                        
-                                                                        return (
-                                                                            <div key={acc.id} onClick={() => {
-                                                                                if(jobMode === 'packen') toggleAccStatus(activeJob.id, invId, acc.id);
-                                                                                else toggleReturnAccStatus(activeJob.id, invId, acc.id);
-                                                                            }} className="flex items-center gap-3 p-2 active:bg-white dark:active:bg-slate-800 rounded-xl transition-colors cursor-pointer">
-                                                                                <LucideIcon name={accStatus ? 'check-circle-2' : 'circle'} size={18} className={accStatus ? 'text-green-500 dark:text-green-400' : 'text-slate-200 dark:text-slate-600'} />
-                                                                                <span className={`text-sm ${accStatus ? 'text-slate-300 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-300'}`}>{acc.name}</span>
-                                                                            </div>
-                                                                        )
-                                                                    })}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
-                                    {Object.keys(packedItemsGrouped).length === 0 && (
-                                        <p className="text-slate-400 text-center py-10 italic">Kein Equipment für diesen Job ausgewählt.</p>
-                                    )}
-                                </div>
+                                        ))}
+                                        {Object.keys(packedItemsGrouped).length === 0 && (
+                                            <p className="text-slate-400 text-center py-10 italic">Kein Equipment für diesen Job ausgewählt.</p>
+                                        )}
 
-                                {/* --- JOB ABSCHLIESSEN BUTTON --- */}
-                                <div className="pb-8 flex justify-center">
-                                    {activeJob.status === 'completed' || activeJob.status === 'cancelled' ? (
-                                        <button onClick={() => changeJobStatus(activeJob.id, 'active')} className="w-full md:w-1/2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 py-5 rounded-[2rem] font-black mt-4 transition-colors flex items-center justify-center gap-2">
-                                            <LucideIcon name="folder-open" size={20}/> Job wieder öffnen
-                                        </button>
-                                    ) : (
-                                        <button 
-                                            onClick={() => {
-                                                if (progressPercent < 100 && jobMode === 'return') {
-                                                    if(confirm('Es sind noch nicht alle Items zurückgecheckt. Job trotzdem abschließen?')) {
-                                                        changeJobStatus(activeJob.id, 'completed');
-                                                    }
-                                                } else {
-                                                    changeJobStatus(activeJob.id, 'completed');
-                                                }
-                                            }} 
-                                            className={`w-full md:w-1/2 text-white py-5 rounded-[2rem] font-black mt-4 shadow-xl transition-colors flex items-center justify-center gap-2 ${jobMode === 'return' && progressPercent === 100 ? 'bg-green-600 hover:bg-green-700 shadow-green-200 dark:shadow-none' : 'bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 shadow-slate-300 dark:shadow-none'}`}
-                                        >
-                                            <LucideIcon name="check-circle-2" size={20}/> Job als abgeschlossen markieren
-                                        </button>
-                                    )}
+                                        {/* Job Abschließen Button - Mobile Version (unter der Liste) */}
+                                        <div className="xl:hidden pb-8 flex justify-center mt-12">
+                                            {activeJob.status === 'completed' || activeJob.status === 'cancelled' ? (
+                                                <button onClick={() => changeJobStatus(activeJob.id, 'active')} className="w-full md:w-1/2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 py-5 rounded-[2rem] font-black transition-colors flex items-center justify-center gap-2">
+                                                    <LucideIcon name="folder-open" size={20}/> Job wieder öffnen
+                                                </button>
+                                            ) : (
+                                                <button 
+                                                    onClick={() => {
+                                                        if (progressPercent < 100 && jobMode === 'return') {
+                                                            if(confirm('Es sind noch nicht alle Items zurückgecheckt. Job trotzdem abschließen?')) {
+                                                                changeJobStatus(activeJob.id, 'completed');
+                                                            }
+                                                        } else {
+                                                            changeJobStatus(activeJob.id, 'completed');
+                                                        }
+                                                    }} 
+                                                    className={`w-full md:w-1/2 text-white py-5 rounded-[2rem] font-black shadow-xl transition-colors flex items-center justify-center gap-2 ${jobMode === 'return' && progressPercent === 100 ? 'bg-green-600 hover:bg-green-700 shadow-green-200 dark:shadow-none' : 'bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 shadow-slate-300 dark:shadow-none'}`}
+                                                >
+                                                    <LucideIcon name="check-circle-2" size={20}/> Job als abgeschlossen markieren
+                                                </button>
+                                            )}
+                                        </div>
+
+                                    </div>
                                 </div>
                             </div>
                         ) : (
                             <div className="space-y-6">
+                                {/* =========================================
+                                    TAB: PLANER (JOBS)
+                                ========================================= */}
                                 {activeTab === 'planer' && (() => {
                                     const pendingJobs = jobs.filter(j => j.status === 'active').sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
                                     const completedJobs = jobs.filter(j => j.status === 'completed').sort((a,b) => new Date(b.endDate) - new Date(a.endDate));
@@ -1021,9 +1070,12 @@
 
                                     return (
                                         <>
-                                            <div className="flex justify-between items-center px-2 mb-2">
-                                                <h2 className="text-xl font-bold">Jobs</h2>
-                                                <button onClick={() => setShowAddModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-xl transition-colors"><LucideIcon name="plus" /></button>
+                                            <div className="flex justify-between items-center px-2 mb-2 lg:mb-6">
+                                                <h2 className="text-xl lg:text-2xl font-bold">Jobs</h2>
+                                                <button onClick={() => setShowAddModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white p-2.5 lg:px-5 lg:py-2.5 rounded-xl flex items-center gap-2 transition-colors">
+                                                    <LucideIcon name="plus" size={20} />
+                                                    <span className="hidden lg:block font-bold text-sm">Neuer Job</span>
+                                                </button>
                                             </div>
                                             
                                             {/* ANSTEHENDE JOBS */}
@@ -1031,15 +1083,16 @@
                                             {pendingJobs.length === 0 && completedJobs.length === 0 && cancelledJobs.length === 0 && <p className="text-center text-slate-400 dark:text-slate-500 py-10">Keine Jobs geplant.</p>}
                                             {pendingJobs.length === 0 && (completedJobs.length > 0 || cancelledJobs.length > 0) && <p className="text-center text-slate-400 dark:text-slate-500 py-6 italic text-sm">Keine anstehenden Jobs.</p>}
                                             
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {/* Grid erweitert für Widescreen */}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 lg:gap-6">
                                                 {pendingJobs.map(job => (
-                                                    <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm active:scale-95 transition-all cursor-pointer">
-                                                        <p className="text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase mb-1">
+                                                    <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm hover:border-blue-300 dark:hover:border-blue-700 active:scale-95 transition-all cursor-pointer group flex flex-col h-full">
+                                                        <p className="text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase mb-2">
                                                             {new Date(job.startDate).toLocaleDateString('de-DE')}
                                                             {job.startDate !== job.endDate && ` - ${new Date(job.endDate).toLocaleDateString('de-DE')}`}
                                                         </p>
-                                                        <h3 className="text-lg font-bold mb-4">{job.name}</h3>
-                                                        <div className="flex justify-between items-center">
+                                                        <h3 className="text-xl font-bold mb-6 flex-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{job.name}</h3>
+                                                        <div className="flex justify-between items-center mt-auto">
                                                             <div className="flex -space-x-2">
                                                                 {Object.keys(job.selectedItemIds).slice(0, 3).map(id => {
                                                                     const invItem = inventory.find(i => i.id === id);
@@ -1049,8 +1102,13 @@
                                                                         </div>
                                                                     )
                                                                 })}
+                                                                {Object.keys(job.selectedItemIds).length > 3 && (
+                                                                    <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-600 border-2 border-white dark:border-slate-800 flex items-center justify-center text-[9px] font-bold text-slate-500 dark:text-slate-300 shadow-sm">
+                                                                        +{Object.keys(job.selectedItemIds).length - 3}
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{Object.keys(job.selectedItemIds).length} Items</div>
+                                                            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900/50 px-2 py-1 rounded-md">{Object.keys(job.selectedItemIds).length} Items</div>
                                                         </div>
                                                     </div>
                                                 ))}
@@ -1058,17 +1116,17 @@
 
                                             {/* ABGESCHLOSSENE JOBS */}
                                             {completedJobs.length > 0 && (
-                                                <div className="mt-8">
-                                                    <button onClick={() => setShowCompletedJobs(!showCompletedJobs)} className="flex items-center justify-between w-full px-2 py-4 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+                                                <div className="mt-10">
+                                                    <button onClick={() => setShowCompletedJobs(!showCompletedJobs)} className="flex items-center justify-between w-full px-2 py-4 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors border-t border-slate-200 dark:border-slate-800">
                                                         <h3 className="text-xs font-black uppercase tracking-widest">Abgeschlossene Jobs ({completedJobs.length})</h3>
                                                         <LucideIcon name={showCompletedJobs ? "chevron-up" : "chevron-down"} size={16} />
                                                     </button>
                                                     
                                                     {showCompletedJobs && (
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 mt-2">
                                                             {completedJobs.map(job => (
                                                                 <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 active:scale-95 transition-all cursor-pointer opacity-70 hover:opacity-100">
-                                                                    <div className="flex justify-between items-start mb-1">
+                                                                    <div className="flex justify-between items-start mb-2">
                                                                         <p className="text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase">
                                                                             {new Date(job.startDate).toLocaleDateString('de-DE')}
                                                                             {job.startDate !== job.endDate && ` - ${new Date(job.endDate).toLocaleDateString('de-DE')}`}
@@ -1089,16 +1147,16 @@
                                             {/* STORNIERTE JOBS */}
                                             {cancelledJobs.length > 0 && (
                                                 <div className="mt-4">
-                                                    <button onClick={() => setShowCancelledJobs(!showCancelledJobs)} className="flex items-center justify-between w-full px-2 py-4 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+                                                    <button onClick={() => setShowCancelledJobs(!showCancelledJobs)} className="flex items-center justify-between w-full px-2 py-4 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors border-t border-slate-200 dark:border-slate-800">
                                                         <h3 className="text-xs font-black uppercase tracking-widest">Stornierte Jobs ({cancelledJobs.length})</h3>
                                                         <LucideIcon name={showCancelledJobs ? "chevron-up" : "chevron-down"} size={16} />
                                                     </button>
                                                     
                                                     {showCancelledJobs && (
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 mt-2">
                                                             {cancelledJobs.map(job => (
                                                                 <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-red-50/50 dark:bg-red-900/10 p-6 rounded-[2rem] border border-red-100 dark:border-red-900/30 active:scale-95 transition-all cursor-pointer opacity-70 hover:opacity-100">
-                                                                    <div className="flex justify-between items-start mb-1">
+                                                                    <div className="flex justify-between items-start mb-2">
                                                                         <p className="text-red-400 dark:text-red-500 text-[10px] font-black uppercase">
                                                                             {new Date(job.startDate).toLocaleDateString('de-DE')}
                                                                         </p>
@@ -1115,68 +1173,183 @@
                                     );
                                 })()}
                                 
+                                {/* =========================================
+                                    TAB: KALENDER
+                                ========================================= */}
                                 {activeTab === 'kalender' && (
                                     <div className="space-y-6 animate-in fade-in duration-300">
-                                        <div className="flex justify-between items-center px-2">
-                                            <h2 className="text-xl font-bold">{currentDate.toLocaleString('de-DE', { month: 'long', year: 'numeric' })}</h2>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth()-1)))} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300"><LucideIcon name="chevron-left" size={16} /></button>
-                                                <button onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth()+1)))} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300"><LucideIcon name="chevron-right" size={16} /></button>
+                                        <div className="flex justify-between items-center px-2 flex-wrap gap-4 mb-2 lg:mb-6">
+                                            <h2 className="text-xl lg:text-2xl font-bold flex items-center gap-2">
+                                                {calendarView === 'month' ? currentDate.toLocaleString('de-DE', { month: 'long', year: 'numeric' }) : currentDate.getFullYear()}
+                                            </h2>
+                                            
+                                            <div className="flex gap-4 items-center">
+                                                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                                                    <button onClick={() => setCalendarView('month')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${calendarView === 'month' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600'}`}>Monat</button>
+                                                    <button onClick={() => setCalendarView('year')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${calendarView === 'year' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600'}`}>Jahr</button>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => {
+                                                        if (calendarView === 'month') setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth()-1)));
+                                                        else setCurrentDate(new Date(currentDate.setFullYear(currentDate.getFullYear()-1)));
+                                                    }} className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"><LucideIcon name="chevron-left" size={18} /></button>
+                                                    <button onClick={() => {
+                                                        if (calendarView === 'month') setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth()+1)));
+                                                        else setCurrentDate(new Date(currentDate.setFullYear(currentDate.getFullYear()+1)));
+                                                    }} className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"><LucideIcon name="chevron-right" size={18} /></button>
+                                                </div>
                                             </div>
                                         </div>
                                         
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-                                            <div className="bg-white dark:bg-slate-800 rounded-[2rem] p-6 shadow-sm border border-slate-100 dark:border-slate-700 transition-colors">
-                                                <div className="calendar-grid text-center text-[10px] font-black text-slate-300 dark:text-slate-500 mb-4">
-                                                    {['MO', 'DI', 'MI', 'DO', 'FR', 'SA', 'SO'].map(d => <div key={d}>{d}</div>)}
-                                                </div>
-                                                <div className="calendar-grid gap-2">
-                                                    {calendarDays.map((date, i) => {
-                                                        const dateJobs = getJobsForDate(date);
-                                                        const isToday = date && date.toDateString() === new Date().toDateString();
-                                                        return (
-                                                            <div key={i} className={`aspect-square flex flex-col items-center justify-center rounded-xl text-sm relative ${!date ? '' : 'bg-slate-50 dark:bg-slate-900/50'} ${isToday ? 'ring-2 ring-blue-400 dark:ring-blue-500 font-black' : ''}`}>
-                                                                {date && date.getDate()}
-                                                                {dateJobs.length > 0 && <div className="absolute bottom-1 w-1.5 h-1.5 bg-blue-600 dark:bg-blue-400 rounded-full"></div>}
-                                                                {dateJobs.length > 0 && date && (
-                                                                    <button onClick={() => { setActiveJobId(dateJobs[0].id); }} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"></button>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
+                                        <div className={`grid grid-cols-1 ${calendarView === 'month' ? 'lg:grid-cols-3 xl:grid-cols-4' : ''} gap-8 items-start`}>
+                                            <div className={`bg-white dark:bg-slate-800 rounded-[2rem] p-6 lg:p-8 shadow-sm border border-slate-100 dark:border-slate-700 transition-colors ${calendarView === 'month' ? 'lg:col-span-2 xl:col-span-3' : 'w-full'}`}>
+                                                {calendarView === 'month' ? (
+                                                    <>
+                                                        <div className="calendar-grid text-center text-[10px] font-black text-slate-300 dark:text-slate-500 mb-4 gap-2 lg:gap-4">
+                                                            {['MO', 'DI', 'MI', 'DO', 'FR', 'SA', 'SO'].map(d => <div key={d}>{d}</div>)}
+                                                        </div>
+                                                        <div className="calendar-grid gap-2 lg:gap-4">
+                                                            {calendarDays.map((date, i) => {
+                                                                const dateStr = date ? date.toISOString().split('T')[0] : null;
+                                                                const dateJobs = date ? jobs.filter(j => j.startDate <= dateStr && j.endDate >= dateStr).sort((a,b)=>a.id.localeCompare(b.id)) : [];
+                                                                const isToday = date && date.toDateString() === new Date().toDateString();
+                                                                
+                                                                const isStartOfWeek = i % 7 === 0;
+                                                                const isEndOfWeek = i % 7 === 6;
+
+                                                                return (
+                                                                    <div key={i} 
+                                                                         onClick={() => {
+                                                                            if(date) {
+                                                                                setJobFormData({ name: "", startDate: dateStr, endDate: dateStr, items: {} });
+                                                                                setShowAddModal(true);
+                                                                            }
+                                                                         }}
+                                                                         className={`aspect-square flex flex-col items-center pt-2 lg:pt-3 rounded-2xl text-sm lg:text-base relative transition-colors ${!date ? '' : 'bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer'} ${isToday ? 'ring-2 ring-blue-400 dark:ring-blue-500 font-black shadow-inner' : ''}`}>
+                                                                        {date && <span className="z-10 text-slate-700 dark:text-slate-300">{date.getDate()}</span>}
+                                                                        
+                                                                        {/* Job Lines Container */}
+                                                                        {date && (
+                                                                            <div className="absolute bottom-1.5 lg:bottom-2.5 left-0 right-0 flex flex-col gap-[3px] lg:gap-1 px-0 z-20">
+                                                                                {dateJobs.map(j => {
+                                                                                    const isStart = j.startDate === dateStr;
+                                                                                    const isEnd = j.endDate === dateStr;
+                                                                                    
+                                                                                    const colorHash = Array.from(j.id).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                                                                                    const colors = ['bg-blue-500', 'bg-purple-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-indigo-500'];
+                                                                                    const colorClass = colors[colorHash % colors.length];
+
+                                                                                    let ml = isStart ? 'ml-1.5 lg:ml-2 rounded-l-md lg:rounded-l-lg' : (isStartOfWeek ? 'ml-0 rounded-l-md lg:rounded-l-lg' : '-ml-2 lg:-ml-4');
+                                                                                    let mr = isEnd ? 'mr-1.5 lg:mr-2 rounded-r-md lg:rounded-r-lg' : (isEndOfWeek ? 'mr-0 rounded-r-md lg:rounded-r-lg' : '-mr-2 lg:-mr-4');
+                                                                                    
+                                                                                    if (!isStart && !isStartOfWeek) ml += ' z-0';
+                                                                                    
+                                                                                    return (
+                                                                                        <div key={j.id} 
+                                                                                             onClick={(e) => { 
+                                                                                                 e.stopPropagation(); 
+                                                                                                 setActiveJobId(j.id); 
+                                                                                             }}
+                                                                                             className={`h-1.5 lg:h-2 ${colorClass} cursor-pointer hover:opacity-75 transition-opacity relative ${ml} ${mr}`}
+                                                                                             title={j.name}
+                                                                                        />
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    // YEAR VIEW
+                                                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-4 md:gap-6">
+                                                        {Array.from({length: 12}, (_, i) => new Date(currentDate.getFullYear(), i, 1)).map((monthDate, i) => {
+                                                            const mYear = monthDate.getFullYear();
+                                                            const mMonth = monthDate.getMonth();
+                                                            const mFirstDay = new Date(mYear, mMonth, 1).getDay();
+                                                            const mDaysInMonth = new Date(mYear, mMonth + 1, 0).getDate();
+                                                            const padding = mFirstDay === 0 ? 6 : mFirstDay - 1;
+                                                            
+                                                            const hasJobs = jobs.some(j => {
+                                                                const s = new Date(j.startDate);
+                                                                const e = new Date(j.endDate);
+                                                                return (s.getFullYear() === mYear && s.getMonth() === mMonth) ||
+                                                                       (e.getFullYear() === mYear && e.getMonth() === mMonth) ||
+                                                                       (s <= monthDate && e >= new Date(mYear, mMonth, mDaysInMonth));
+                                                            });
+
+                                                            return (
+                                                                <div key={i} onClick={() => { setCurrentDate(monthDate); setCalendarView('month'); }} 
+                                                                     className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 transition-colors relative group">
+                                                                     {hasJobs && <div className="absolute top-3 right-3 w-2 h-2 bg-blue-500 rounded-full shadow-sm shadow-blue-200 dark:shadow-none"></div>}
+                                                                    <h4 className="text-xs lg:text-sm font-bold text-center mb-3 lg:mb-4 uppercase tracking-widest text-slate-500 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{monthDate.toLocaleString('de-DE', { month: 'long' })}</h4>
+                                                                    <div className="grid grid-cols-7 gap-1 text-[8px] lg:text-[10px] text-center text-slate-400 dark:text-slate-500">
+                                                                        {['M','D','M','D','F','S','S'].map((d,idx) => <div key={idx} className="font-bold">{d}</div>)}
+                                                                        {Array.from({length: padding}).map((_, idx) => <div key={`pad-${idx}`}></div>)}
+                                                                        {Array.from({length: mDaysInMonth}).map((_, idx) => {
+                                                                            const isToday = new Date(mYear, mMonth, idx+1).toDateString() === new Date().toDateString();
+                                                                            return (
+                                                                                <div key={`day-${idx}`} className={`aspect-square flex items-center justify-center rounded-sm ${isToday ? 'bg-blue-600 text-white font-bold' : ''}`}>
+                                                                                    {idx + 1}
+                                                                                </div>
+                                                                            )
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
                                             </div>
 
-                                            <div className="space-y-4 md:mt-0">
-                                                <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase ml-2">Jobs in diesem Monat</h3>
-                                                {jobs.filter(j => {
-                                                    const sMonth = new Date(j.startDate).getMonth();
-                                                    const eMonth = new Date(j.endDate).getMonth();
-                                                    const cMonth = currentDate.getMonth();
-                                                    return cMonth >= sMonth && cMonth <= eMonth;
-                                                }).map(j => (
-                                                    <div key={j.id} onClick={() => setActiveJobId(j.id)} className={`bg-white dark:bg-slate-800 p-5 rounded-[1.5rem] flex justify-between items-center border border-slate-100 dark:border-slate-700 shadow-sm cursor-pointer transition-colors ${j.status === 'cancelled' ? 'opacity-50' : ''}`}>
-                                                        <div className="flex items-center gap-4">
-                                                            <div className={`w-3 h-3 rounded-full ${j.status === 'completed' ? 'bg-green-500' : j.status === 'cancelled' ? 'bg-orange-500' : 'bg-blue-600 dark:bg-blue-400'}`}></div>
-                                                            <div className="flex flex-col">
-                                                                <span className={`font-bold text-base ${j.status === 'completed' || j.status === 'cancelled' ? 'text-slate-500 dark:text-slate-400 line-through' : ''}`}>{j.name}</span>
-                                                                <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">{new Date(j.startDate).toLocaleDateString('de-DE')} {j.startDate !== j.endDate && `- ${new Date(j.endDate).toLocaleDateString('de-DE')}`}</span>
-                                                            </div>
-                                                        </div>
-                                                        <LucideIcon name="chevron-right" size={20} className="text-slate-300 dark:text-slate-600" />
+                                            {calendarView === 'month' && (
+                                                <div className="space-y-4 md:mt-0 lg:sticky lg:top-[120px]">
+                                                    <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase ml-2 flex items-center justify-between">
+                                                        Jobs im {currentDate.toLocaleString('de-DE', { month: 'long' })}
+                                                        <span className="bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2.5 py-0.5 rounded-full text-[10px]">
+                                                            {jobs.filter(isJobInCurrentMonth).length}
+                                                        </span>
+                                                    </h3>
+                                                    <div className="max-h-[32rem] overflow-y-auto custom-scrollbar pr-2 space-y-3">
+                                                        {jobs.filter(isJobInCurrentMonth).map(j => {
+                                                            const colorHash = Array.from(j.id).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                                                            const colors = ['bg-blue-500', 'bg-purple-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-indigo-500'];
+                                                            const colorClass = colors[colorHash % colors.length];
+
+                                                            return (
+                                                                <div key={j.id} onClick={() => setActiveJobId(j.id)} className={`bg-white dark:bg-slate-800 p-5 lg:p-6 rounded-[1.5rem] flex justify-between items-center border border-slate-100 dark:border-slate-700 shadow-sm cursor-pointer hover:border-blue-200 dark:hover:border-blue-800 transition-colors ${j.status === 'cancelled' ? 'opacity-50' : ''}`}>
+                                                                    <div className="flex items-center gap-4">
+                                                                        <div className={`w-3 h-3 lg:w-4 lg:h-4 rounded-full ${j.status === 'completed' ? 'bg-green-500' : j.status === 'cancelled' ? 'bg-orange-500' : colorClass}`}></div>
+                                                                        <div className="flex flex-col">
+                                                                            <span className={`font-bold text-base lg:text-lg ${j.status === 'completed' || j.status === 'cancelled' ? 'text-slate-500 dark:text-slate-400 line-through' : ''}`}>{j.name}</span>
+                                                                            <span className="text-[11px] lg:text-xs font-medium text-slate-400 dark:text-slate-500 mt-1">{new Date(j.startDate).toLocaleDateString('de-DE')} {j.startDate !== j.endDate && `- ${new Date(j.endDate).toLocaleDateString('de-DE')}`}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <LucideIcon name="chevron-right" size={20} className="text-slate-300 dark:text-slate-600" />
+                                                                </div>
+                                                            );
+                                                        })}
+                                                        {jobs.filter(isJobInCurrentMonth).length === 0 && <p className="text-sm text-slate-400 dark:text-slate-500 ml-2 italic p-4">Keine Jobs geplant</p>}
                                                     </div>
-                                                ))}
-                                                {jobs.length === 0 && <p className="text-sm text-slate-400 dark:text-slate-500 ml-2 italic">Keine Jobs</p>}
-                                            </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
 
+                                {/* =========================================
+                                    TAB: LAGER
+                                ========================================= */}
                                 {activeTab === 'lager' && (
                                     <div className="space-y-4">
-                                        <div className="flex justify-between items-center px-2 mb-6">
-                                            <h2 className="text-xl font-bold">Lager</h2>
-                                            <button onClick={() => {setEditingItem(null); setItemType('item'); setFormData({name: "", category: categories[0] || "Sonstiges", quantity: 1, bundleItems: {}, imageUrl: ""}); setShowAddModal(true);}} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-xl shadow-lg transition-colors"><LucideIcon name="plus" /></button>
+                                        <div className="flex justify-between items-center px-2 mb-2 lg:mb-6">
+                                            <h2 className="text-xl lg:text-2xl font-bold">Lagerbestand</h2>
+                                            <button onClick={() => {setEditingItem(null); setItemType('item'); setFormData({name: "", category: categories[0] || "Sonstiges", quantity: 1, bundleItems: {}, imageUrl: ""}); setShowAddModal(true);}} className="bg-blue-600 hover:bg-blue-700 text-white p-2.5 lg:px-5 lg:py-2.5 rounded-xl shadow-lg flex items-center gap-2 transition-colors">
+                                                <LucideIcon name="plus" size={20} />
+                                                <span className="hidden lg:block font-bold text-sm">Neuer Artikel</span>
+                                            </button>
                                         </div>
                                         {inventory.length === 0 && <p className="text-center text-slate-400 dark:text-slate-500 py-10">Lager ist leer.</p>}
                                         
@@ -1187,38 +1360,38 @@
                                             
                                             // Helper to render a single item
                                             const renderItem = (item) => (
-                                                <div key={item.id} className={`bg-white dark:bg-slate-800 p-5 rounded-[2rem] border ${item.isBundle ? 'border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-900/10' : 'border-slate-100 dark:border-slate-700'} flex flex-col gap-4 shadow-sm transition-colors h-fit`}>
-                                                    <div className="flex justify-between items-start">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-center overflow-hidden">
-                                                                {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" /> : <LucideIcon name={item.isBundle ? "layers" : "image"} size={18} className="text-slate-400 dark:text-slate-500" />}
+                                                <div key={item.id} className={`bg-white dark:bg-slate-800 p-5 lg:p-6 rounded-[2rem] border ${item.isBundle ? 'border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-900/10' : 'border-slate-100 dark:border-slate-700'} flex flex-col gap-4 lg:gap-6 shadow-sm transition-colors h-full`}>
+                                                    <div className="flex justify-between items-start flex-1">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="w-12 h-12 shrink-0 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                                                                {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" /> : <LucideIcon name={item.isBundle ? "layers" : "image"} size={22} className="text-slate-400 dark:text-slate-500" />}
                                                             </div>
                                                             <div>
                                                                 {item.isBundle ? (
-                                                                    <p className="text-[10px] font-black text-purple-500 dark:text-purple-400 uppercase flex items-center gap-1"><LucideIcon name="layers" size={12}/> Bundle</p>
+                                                                    <p className="text-[10px] lg:text-xs font-black text-purple-500 dark:text-purple-400 uppercase flex items-center gap-1 mb-1"><LucideIcon name="layers" size={12}/> Bundle</p>
                                                                 ) : (
-                                                                    <p className="text-[10px] font-black text-blue-500 dark:text-blue-400 uppercase">{item.category}</p>
+                                                                    <p className="text-[10px] lg:text-xs font-black text-blue-500 dark:text-blue-400 uppercase mb-1">{item.category}</p>
                                                                 )}
-                                                                <h3 className="font-bold">{item.name}</h3>
+                                                                <h3 className="font-bold text-lg leading-tight">{item.name}</h3>
                                                                 {item.isBundle && (
-                                                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 line-clamp-2">
+                                                                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 line-clamp-3">
                                                                         Enthält: {Object.entries(item.bundleItems || {}).map(([bId, qty]) => `${qty}x ${inventory.find(i=>i.id===bId)?.name}`).join(', ')}
                                                                     </p>
                                                                 )}
                                                             </div>
                                                         </div>
-                                                        <div className="flex gap-2 shrink-0">
-                                                            <button onClick={() => {setEditingItem(item); setItemType(item.isBundle ? 'bundle' : 'item'); setFormData({name: item.name, category: item.category, quantity: item.quantity, bundleItems: item.bundleItems || {}, imageUrl: item.imageUrl || ""}); setShowAddModal(true);}} className="text-slate-400 dark:text-slate-500 p-1 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"><LucideIcon name="edit-2" size={16} /></button>
-                                                            <button onClick={() => confirmDeleteItem(item.id)} className="text-red-300 dark:text-red-400 p-1 hover:text-red-500 transition-colors"><LucideIcon name="trash-2" size={16} /></button>
+                                                        <div className="flex flex-col gap-2 shrink-0 ml-2">
+                                                            <button onClick={() => {setEditingItem(item); setItemType(item.isBundle ? 'bundle' : 'item'); setFormData({name: item.name, category: item.category, quantity: item.quantity, bundleItems: item.bundleItems || {}, imageUrl: item.imageUrl || ""}); setShowAddModal(true);}} className="text-slate-400 dark:text-slate-500 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"><LucideIcon name="edit-2" size={18} /></button>
+                                                            <button onClick={() => confirmDeleteItem(item.id)} className="text-red-300 dark:text-red-400 p-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><LucideIcon name="trash-2" size={18} /></button>
                                                         </div>
                                                     </div>
                                                     {!item.isBundle && (
-                                                        <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 px-4 py-2 rounded-2xl">
-                                                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Bestand</span>
-                                                            <div className="flex items-center gap-4">
-                                                                <button onClick={() => setInventory(inventory.map(i=>i.id===item.id?{...i, quantity:Math.max(1, i.quantity-1)}:i))} className="bg-white dark:bg-slate-700 shadow-sm w-8 h-8 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400"><LucideIcon name="minus" size={16} /></button>
-                                                                <span className="font-bold text-lg w-6 text-center">{item.quantity || 1}</span>
-                                                                <button onClick={() => setInventory(inventory.map(i=>i.id===item.id?{...i, quantity:i.quantity+1}:i))} className="bg-white dark:bg-slate-700 shadow-sm w-8 h-8 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400"><LucideIcon name="plus" size={16} /></button>
+                                                        <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 px-5 py-3 rounded-2xl mt-auto">
+                                                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Bestand</span>
+                                                            <div className="flex items-center gap-5">
+                                                                <button onClick={() => setInventory(inventory.map(i=>i.id===item.id?{...i, quantity:Math.max(1, i.quantity-1)}:i))} className="bg-white dark:bg-slate-700 shadow-sm w-9 h-9 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 hover:scale-105 active:scale-95 transition-all"><LucideIcon name="minus" size={18} /></button>
+                                                                <span className="font-black text-xl w-6 text-center">{item.quantity || 1}</span>
+                                                                <button onClick={() => setInventory(inventory.map(i=>i.id===item.id?{...i, quantity:i.quantity+1}:i))} className="bg-white dark:bg-slate-700 shadow-sm w-9 h-9 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 hover:scale-105 active:scale-95 transition-all"><LucideIcon name="plus" size={18} /></button>
                                                             </div>
                                                         </div>
                                                     )}
@@ -1226,23 +1399,23 @@
                                             );
 
                                             return (
-                                                <div key={cat} className="mb-6">
-                                                    <button onClick={() => toggleCatLager(cat)} className="flex items-center gap-2 w-full px-2 mb-3 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400 transition-colors">
-                                                        <LucideIcon name={isExpanded ? "chevron-up" : "chevron-down"} size={16} />
-                                                        <h3 className="text-xs font-black uppercase tracking-widest">{cat}</h3>
-                                                        <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1 ml-2"></div>
+                                                <div key={cat} className="mb-8">
+                                                    <button onClick={() => toggleCatLager(cat)} className="flex items-center gap-2 w-full px-2 mb-4 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400 transition-colors">
+                                                        <LucideIcon name={isExpanded ? "chevron-up" : "chevron-down"} size={18} />
+                                                        <h3 className="text-sm lg:text-base font-black uppercase tracking-widest">{cat}</h3>
+                                                        <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1 ml-4"></div>
                                                     </button>
                                                     
                                                     {isExpanded && (
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-3">
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 lg:gap-6 mt-4">
                                                             {data.items.map(renderItem)}
                                                             
                                                             {Object.entries(data.subs).map(([subCat, subItems]) => {
                                                                 if (subItems.length === 0) return null;
                                                                 return (
-                                                                    <div key={subCat} className="col-span-1 md:col-span-2 lg:col-span-3 mt-4 border-l-2 border-slate-200 dark:border-slate-700 pl-3 ml-2">
-                                                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3">{subCat}</h4>
-                                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                                    <div key={subCat} className="col-span-full mt-6 border-l-4 border-slate-200 dark:border-slate-700 pl-4 lg:pl-6 ml-2 lg:ml-4">
+                                                                        <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-4">{subCat}</h4>
+                                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
                                                                             {subItems.map(renderItem)}
                                                                         </div>
                                                                     </div>
@@ -1256,56 +1429,65 @@
                                     </div>
                                 )}
                                 
+                                {/* =========================================
+                                    TAB: STATS
+                                ========================================= */}
                                 {activeTab === 'stats' && (
-                                    <div className="space-y-6">
-                                        <h2 className="text-xl font-bold px-2">Statistik</h2>
+                                    <div className="space-y-6 lg:space-y-8">
+                                        <h2 className="text-xl lg:text-2xl font-bold px-2">Statistik</h2>
                                         
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                                            <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
-                                                <h3 className="font-bold mb-6 flex items-center gap-2">
-                                                    <LucideIcon name="bar-chart-3" className="text-blue-600" size={20}/> Top Equipment (Top 10)
+                                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8 items-start">
+                                            <div className="bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+                                                <h3 className="font-bold text-lg mb-8 flex items-center gap-3">
+                                                    <div className="bg-blue-50 dark:bg-blue-900/30 p-2 rounded-lg">
+                                                        <LucideIcon name="bar-chart-3" className="text-blue-600 dark:text-blue-400" size={24}/>
+                                                    </div>
+                                                    Top Equipment (Top 10)
                                                 </h3>
-                                                <div className="space-y-5">
+                                                <div className="space-y-6">
                                                     {inventory.filter(i=>!i.isBundle).sort((a,b) => usageStats[b.id] - usageStats[a.id]).slice(0, 10).map(item => (
                                                         <div key={item.id}>
-                                                            <div className="flex justify-between text-xs font-bold mb-2">
+                                                            <div className="flex justify-between text-sm font-bold mb-2">
                                                                 <span className="truncate mr-4">{item.name}</span>
-                                                                <span className="text-blue-600 dark:text-blue-400 shrink-0">{usageStats[item.id]}x genutzt</span>
+                                                                <span className="text-blue-600 dark:text-blue-400 shrink-0 bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded-md">{usageStats[item.id]}x genutzt</span>
                                                             </div>
-                                                            <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                                                            <div className="w-full bg-slate-100 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
                                                                 <div className="bg-blue-600 dark:bg-blue-500 h-full rounded-full transition-all duration-1000 ease-out" style={{width: `${Math.min(100, (usageStats[item.id] / (jobs.length || 1)) * 100)}%`}}></div>
                                                             </div>
                                                         </div>
                                                     ))}
-                                                    {inventory.length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500 italic">Keine Daten</p>}
+                                                    {inventory.length === 0 && <p className="text-sm text-slate-400 dark:text-slate-500 italic">Keine Daten</p>}
                                                 </div>
                                             </div>
 
-                                            <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+                                            <div className="bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
                                                 <button onClick={() => setExpandedCatsPlaner(prev => ({...prev, 'lastUsed': !prev['lastUsed']}))} className="flex justify-between items-center w-full">
-                                                    <h3 className="font-bold flex items-center gap-2">
-                                                        <LucideIcon name="history" className="text-purple-600" size={20}/> Zuletzt genutzt Historie
+                                                    <h3 className="font-bold text-lg flex items-center gap-3">
+                                                        <div className="bg-purple-50 dark:bg-purple-900/30 p-2 rounded-lg">
+                                                            <LucideIcon name="history" className="text-purple-600 dark:text-purple-400" size={24}/>
+                                                        </div>
+                                                        Zuletzt genutzt Historie
                                                     </h3>
                                                     <LucideIcon name={expandedCatsPlaner['lastUsed'] ? "chevron-up" : "chevron-down"} size={20} className="text-slate-400" />
                                                 </button>
                                                 {expandedCatsPlaner['lastUsed'] && (
-                                                    <div className="mt-6 space-y-3 max-h-[32rem] overflow-y-auto custom-scrollbar pr-2">
+                                                    <div className="mt-8 space-y-4 max-h-[40rem] overflow-y-auto custom-scrollbar pr-2">
                                                         {inventory.filter(i=>!i.isBundle).sort((a,b) => {
                                                             const dateA = lastUsedStats[a.id] ? new Date(lastUsedStats[a.id]) : new Date(0);
                                                             const dateB = lastUsedStats[b.id] ? new Date(lastUsedStats[b.id]) : new Date(0);
                                                             return dateB - dateA; // Neueste zuerst
                                                         }).map(item => (
-                                                            <div key={item.id} className="flex justify-between items-center p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                                                            <div key={item.id} className="flex justify-between items-center p-4 lg:p-5 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-700">
                                                                 <div className="flex flex-col truncate mr-4">
-                                                                    <span className="font-bold text-sm dark:text-white truncate">{item.name}</span>
-                                                                    <span className="text-[10px] uppercase text-slate-400 dark:text-slate-500">{item.category}</span>
+                                                                    <span className="font-bold text-sm lg:text-base dark:text-white truncate mb-1">{item.name}</span>
+                                                                    <span className="text-[10px] lg:text-xs uppercase text-slate-400 dark:text-slate-500 tracking-widest">{item.category}</span>
                                                                 </div>
-                                                                <span className="text-xs font-black text-slate-500 dark:text-slate-400 shrink-0 bg-white dark:bg-slate-800 px-2 py-1 rounded-md shadow-sm border border-slate-100 dark:border-slate-700">
+                                                                <span className="text-xs lg:text-sm font-black text-slate-500 dark:text-slate-400 shrink-0 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">
                                                                     {lastUsedStats[item.id] ? new Date(lastUsedStats[item.id]).toLocaleDateString('de-DE') : 'Nie'}
                                                                 </span>
                                                             </div>
                                                         ))}
-                                                        {inventory.filter(i=>!i.isBundle).length === 0 && <p className="text-xs text-slate-400 italic">Kein Equipment vorhanden</p>}
+                                                        {inventory.filter(i=>!i.isBundle).length === 0 && <p className="text-sm text-slate-400 italic">Kein Equipment vorhanden</p>}
                                                     </div>
                                                 )}
                                             </div>
@@ -1313,88 +1495,101 @@
                                     </div>
                                 )}
 
+                                {/* =========================================
+                                    TAB: MANAGEMENT
+                                ========================================= */}
                                 {activeTab === 'management' && (
-                                    <div className="space-y-8 animate-in fade-in duration-300">
+                                    <div className="space-y-8 lg:space-y-12 animate-in fade-in duration-300">
                                         <div className="flex justify-between items-center px-2">
-                                            <h2 className="text-xl font-bold">Management</h2>
+                                            <h2 className="text-xl lg:text-2xl font-bold">Management</h2>
                                         </div>
 
-                                        {/* KATEGORIEN */}
-                                        <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
-                                            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest mb-6">Kategorien</h3>
-                                            
-                                            <div className="space-y-4 mb-8">
-                                                {(() => {
-                                                    const catHierarchy = {};
-                                                    categories.forEach(c => {
-                                                        const parts = c.split(' - ');
-                                                        const main = parts[0];
-                                                        if (!catHierarchy[main]) catHierarchy[main] = [];
-                                                        if (parts.length > 1) catHierarchy[main].push({ full: c, sub: parts[1] });
-                                                    });
+                                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 lg:gap-12 items-start">
+                                            {/* KATEGORIEN */}
+                                            <div className="bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+                                                <h3 className="text-sm lg:text-base font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest mb-8 flex items-center gap-3">
+                                                    <LucideIcon name="folder-tree" size={24} className="text-blue-500" /> Kategorien
+                                                </h3>
+                                                
+                                                <div className="space-y-4 mb-10 max-h-[30rem] overflow-y-auto custom-scrollbar pr-2">
+                                                    {(() => {
+                                                        const catHierarchy = {};
+                                                        categories.forEach(c => {
+                                                            const parts = c.split(' - ');
+                                                            const main = parts[0];
+                                                            if (!catHierarchy[main]) catHierarchy[main] = [];
+                                                            if (parts.length > 1) catHierarchy[main].push({ full: c, sub: parts[1] });
+                                                        });
 
-                                                    return Object.entries(catHierarchy).map(([main, subs]) => (
-                                                        <div key={main} className="mb-2">
-                                                            <div className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-700">
-                                                                <span className="font-bold text-sm">{main}</span>
-                                                                <button onClick={() => deleteCategory(main)} className="text-red-400 dark:text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><LucideIcon name="trash-2" size={16} /></button>
-                                                            </div>
-                                                            {subs.length > 0 && (
-                                                                <div className="pl-4 mt-2 space-y-2 border-l-2 border-slate-100 dark:border-slate-700 ml-4">
-                                                                    {subs.map(s => (
-                                                                        <div key={s.full} className="flex justify-between items-center p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700">
-                                                                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">{s.sub}</span>
-                                                                            <button onClick={() => deleteCategory(s.full)} className="text-red-300 dark:text-red-400 p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><LucideIcon name="trash-2" size={14} /></button>
-                                                                        </div>
-                                                                    ))}
+                                                        return Object.entries(catHierarchy).map(([main, subs]) => (
+                                                            <div key={main} className="mb-4">
+                                                                <div className="flex justify-between items-center p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                                                                    <span className="font-bold text-base">{main}</span>
+                                                                    <button onClick={() => deleteCategory(main)} className="text-red-400 dark:text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><LucideIcon name="trash-2" size={18} /></button>
                                                                 </div>
-                                                            )}
-                                                        </div>
-                                                    ));
-                                                })()}
-                                                {categories.length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500 italic">Keine Kategorien vorhanden.</p>}
-                                            </div>
-                                            
-                                            <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase mb-3">Neue Kategorie</h3>
-                                            <div className="space-y-2">
-                                                <select 
-                                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-3 font-bold outline-none text-sm appearance-none dark:text-white" 
-                                                    value={newCatParent} 
-                                                    onChange={e=>setNewCatParent(e.target.value)}
-                                                >
-                                                    <option value="">-- Als Hauptkategorie --</option>
-                                                    {categories.filter(c => !c.includes(' - ')).map(c => <option key={c} value={c}>Unterkategorie von: {c}</option>)}
-                                                </select>
-                                                <div className="flex gap-2">
-                                                    <input className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-3 font-bold outline-none text-sm dark:text-white dark:placeholder-slate-500" placeholder="Name der Kategorie..." value={newCatName} onChange={e=>setNewCatName(e.target.value)} />
-                                                    <button onClick={addCategory} className="bg-blue-600 hover:bg-blue-700 text-white px-5 rounded-xl transition-colors"><LucideIcon name="plus" size={20}/></button>
+                                                                {subs.length > 0 && (
+                                                                    <div className="pl-4 mt-3 space-y-2 border-l-2 border-slate-200 dark:border-slate-700 ml-5">
+                                                                        {subs.map(s => (
+                                                                            <div key={s.full} className="flex justify-between items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm">
+                                                                                <span className="text-sm font-bold text-slate-600 dark:text-slate-400">{s.sub}</span>
+                                                                                <button onClick={() => deleteCategory(s.full)} className="text-red-300 dark:text-red-400 p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><LucideIcon name="trash-2" size={16} /></button>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ));
+                                                    })()}
+                                                    {categories.length === 0 && <p className="text-sm text-slate-400 dark:text-slate-500 italic">Keine Kategorien vorhanden.</p>}
                                                 </div>
-                                            </div>
-                                        </div>
-
-                                        {/* BUNDLES */}
-                                        <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
-                                            <div className="flex justify-between items-center mb-6">
-                                                <h3 className="text-sm font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest">Bundles</h3>
-                                                <button onClick={() => {setEditingItem(null); setItemType('bundle'); setFormData({name: "", category: "Bundles", quantity: 1, bundleItems: {}, imageUrl: ""}); setShowAddModal(true);}} className="bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 p-2 rounded-xl transition-colors hover:bg-purple-200 dark:hover:bg-purple-900/50"><LucideIcon name="plus" size={16}/></button>
-                                            </div>
-                                            
-                                            <div className="space-y-3">
-                                                {inventory.filter(i => i.isBundle).map(bundle => (
-                                                    <div key={bundle.id} className="flex justify-between items-center p-4 bg-purple-50/50 dark:bg-purple-900/10 rounded-xl border border-purple-100 dark:border-purple-800/30">
-                                                        <div className="flex flex-col flex-1 mr-4">
-                                                            <span className="font-bold text-sm dark:text-white">{bundle.name}</span>
-                                                            <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 line-clamp-1">
-                                                                {Object.entries(bundle.bundleItems || {}).map(([bId, qty]) => `${qty}x ${inventory.find(i=>i.id===bId)?.name}`).join(', ')}
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex gap-2 shrink-0">
-                                                            <button onClick={() => {setEditingItem(bundle); setItemType('bundle'); setFormData({name: bundle.name, category: "Bundles", quantity: 1, bundleItems: bundle.bundleItems || {}, imageUrl: bundle.imageUrl || ""}); setShowAddModal(true);}} className="text-slate-400 dark:text-slate-500 p-2 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors"><LucideIcon name="edit-2" size={16} /></button>
-                                                            <button onClick={() => confirmDeleteItem(bundle.id)} className="text-red-400 dark:text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><LucideIcon name="trash-2" size={16} /></button>
+                                                
+                                                <div className="bg-slate-50 dark:bg-slate-900/50 p-5 lg:p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
+                                                    <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-4">Neue Kategorie anlegen</h3>
+                                                    <div className="space-y-4">
+                                                        <select 
+                                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl p-4 font-bold outline-none text-sm appearance-none dark:text-white" 
+                                                            value={newCatParent} 
+                                                            onChange={e=>setNewCatParent(e.target.value)}
+                                                        >
+                                                            <option value="">-- Als Hauptkategorie --</option>
+                                                            {categories.filter(c => !c.includes(' - ')).map(c => <option key={c} value={c}>Unterkategorie von: {c}</option>)}
+                                                        </select>
+                                                        <div className="flex gap-2">
+                                                            <input className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl p-4 font-bold outline-none text-sm dark:text-white dark:placeholder-slate-500" placeholder="Name der Kategorie..." value={newCatName} onChange={e=>setNewCatName(e.target.value)} />
+                                                            <button onClick={addCategory} className="bg-blue-600 hover:bg-blue-700 text-white px-6 rounded-xl transition-colors"><LucideIcon name="plus" size={20}/></button>
                                                         </div>
                                                     </div>
-                                                ))}
-                                                {inventory.filter(i => i.isBundle).length === 0 && <p className="text-xs text-slate-400 italic">Keine Bundles vorhanden.</p>}
+                                                </div>
+                                            </div>
+
+                                            {/* BUNDLES */}
+                                            <div className="bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+                                                <div className="flex justify-between items-center mb-8">
+                                                    <h3 className="text-sm lg:text-base font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest flex items-center gap-3">
+                                                        <LucideIcon name="layers" size={24} /> Bundles
+                                                    </h3>
+                                                    <button onClick={() => {setEditingItem(null); setItemType('bundle'); setFormData({name: "", category: "Bundles", quantity: 1, bundleItems: {}, imageUrl: ""}); setShowAddModal(true);}} className="bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-4 py-2.5 rounded-xl transition-colors hover:bg-purple-200 dark:hover:bg-purple-900/50 flex items-center gap-2 font-bold text-sm">
+                                                        <LucideIcon name="plus" size={18}/> <span className="hidden sm:block">Neues Bundle</span>
+                                                    </button>
+                                                </div>
+                                                
+                                                <div className="grid grid-cols-1 gap-4 max-h-[45rem] overflow-y-auto custom-scrollbar pr-2">
+                                                    {inventory.filter(i => i.isBundle).map(bundle => (
+                                                        <div key={bundle.id} className="flex justify-between items-center p-5 bg-purple-50/50 dark:bg-purple-900/10 rounded-2xl border border-purple-100 dark:border-purple-800/30">
+                                                            <div className="flex flex-col flex-1 mr-4">
+                                                                <span className="font-bold text-base dark:text-white mb-1">{bundle.name}</span>
+                                                                <span className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                                                    {Object.entries(bundle.bundleItems || {}).map(([bId, qty]) => `${qty}x ${inventory.find(i=>i.id===bId)?.name}`).join(', ')}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex flex-col gap-2 shrink-0">
+                                                                <button onClick={() => {setEditingItem(bundle); setItemType('bundle'); setFormData({name: bundle.name, category: "Bundles", quantity: 1, bundleItems: bundle.bundleItems || {}, imageUrl: bundle.imageUrl || ""}); setShowAddModal(true);}} className="text-slate-400 dark:text-slate-500 p-2 hover:bg-white dark:hover:bg-slate-800 shadow-sm rounded-lg transition-colors"><LucideIcon name="edit-2" size={18} /></button>
+                                                                <button onClick={() => confirmDeleteItem(bundle.id)} className="text-red-400 dark:text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/30 shadow-sm rounded-lg transition-colors"><LucideIcon name="trash-2" size={18} /></button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                    {inventory.filter(i => i.isBundle).length === 0 && <p className="text-sm text-slate-400 italic">Keine Bundles vorhanden.</p>}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -1403,37 +1598,44 @@
                         )}
                     </main>
 
-                    {/* --- NAVIGATION --- */}
-                    <nav className="fixed bottom-0 left-0 right-0 md:top-0 md:bottom-0 md:right-auto md:w-28 md:flex-col md:justify-center md:border-r md:border-t-0 md:gap-8 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-slate-100 dark:border-slate-800 flex justify-around items-center py-6 px-4 md:py-8 z-40 transition-colors duration-200">
-                        <button onClick={() => {setActiveTab('lager'); setActiveJobId(null);}} className={`flex flex-col items-center gap-1.5 flex-1 md:flex-none w-full ${activeTab === 'lager' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-500 dark:hover:text-slate-300'}`}>
-                            <div className={`p-2 rounded-2xl transition-all duration-300 ${activeTab === 'lager' ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}>
-                                <LucideIcon name="box" size={26} />
-                            </div>
-                            <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest">Lager</span>
-                        </button>
-                        <button onClick={() => {setActiveTab('planer'); setActiveJobId(null);}} className={`flex flex-col items-center gap-1.5 flex-1 md:flex-none w-full ${activeTab === 'planer' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-500 dark:hover:text-slate-300'}`}>
-                            <div className={`p-2 rounded-2xl transition-all duration-300 ${activeTab === 'planer' ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}>
-                                <LucideIcon name="briefcase" size={26} />
-                            </div>
-                            <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest">Jobs</span>
-                        </button>
-                        <button onClick={() => {setActiveTab('kalender'); setActiveJobId(null);}} className={`flex flex-col items-center gap-1.5 flex-1 md:flex-none w-full ${activeTab === 'kalender' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-500 dark:hover:text-slate-300'}`}>
-                            <div className={`p-2 rounded-2xl transition-all duration-300 ${activeTab === 'kalender' ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}>
-                                <LucideIcon name="calendar" size={26} />
-                            </div>
-                            <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest">Kalender</span>
-                        </button>
-                        <button onClick={() => {setActiveTab('stats'); setActiveJobId(null);}} className={`flex flex-col items-center gap-1.5 flex-1 md:flex-none w-full ${activeTab === 'stats' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-500 dark:hover:text-slate-300'}`}>
-                            <div className={`p-2 rounded-2xl transition-all duration-300 ${activeTab === 'stats' ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}>
-                                <LucideIcon name="bar-chart-3" size={26} />
-                            </div>
-                            <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest">Stats</span>
-                        </button>
-                        <button onClick={() => {setActiveTab('management'); setActiveJobId(null);}} className={`flex flex-col items-center gap-1.5 flex-1 md:flex-none w-full ${activeTab === 'management' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-500 dark:hover:text-slate-300'}`}>
-                            <div className={`p-2 rounded-2xl transition-all duration-300 ${activeTab === 'management' ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}>
+                    {/* --- WIDESCREEN OPTIMIERTE NAVIGATION (SIDEBAR AUF DESKTOP) --- */}
+                    <nav className="fixed bottom-0 left-0 right-0 lg:top-0 lg:bottom-0 lg:right-auto lg:w-[260px] lg:flex-col lg:justify-start lg:border-r lg:border-t-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-slate-100 dark:border-slate-800 flex justify-around lg:gap-3 py-4 lg:py-8 px-2 lg:px-4 z-40 transition-colors duration-200">
+                        
+                        {/* Logo Desktop Sidebar */}
+                        <div className="hidden lg:flex items-center gap-3 px-4 mb-10 text-2xl font-black text-slate-800 dark:text-white w-full">
+                            <LucideIcon name="package" className="text-blue-600 dark:text-blue-400 shrink-0" size={32} />
+                            <span className="tracking-tight">TechPack</span>
+                        </div>
+
+                        <button onClick={() => {setActiveTab('management'); setActiveJobId(null);}} className={`flex flex-col lg:flex-row items-center lg:justify-start gap-1.5 lg:gap-4 flex-1 lg:flex-none w-full p-2 lg:px-5 lg:py-4 rounded-2xl transition-all duration-300 ${activeTab === 'management' ? 'text-blue-600 dark:text-blue-400 lg:bg-blue-50 lg:dark:bg-blue-900/30' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 lg:hover:bg-slate-50 lg:dark:hover:bg-slate-800/50'}`}>
+                            <div className={`p-1.5 lg:p-0 rounded-2xl transition-all duration-300 ${activeTab === 'management' ? 'bg-blue-50 dark:bg-blue-900/30 lg:bg-transparent' : ''}`}>
                                 <LucideIcon name="sliders" size={26} />
                             </div>
-                            <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest">Manage</span>
+                            <span className="text-[9px] lg:text-sm font-black lg:font-bold uppercase lg:normal-case tracking-widest lg:tracking-normal lg:block md:hidden">Manage</span>
+                        </button>
+                        <button onClick={() => {setActiveTab('lager'); setActiveJobId(null);}} className={`flex flex-col lg:flex-row items-center lg:justify-start gap-1.5 lg:gap-4 flex-1 lg:flex-none w-full p-2 lg:px-5 lg:py-4 rounded-2xl transition-all duration-300 ${activeTab === 'lager' ? 'text-blue-600 dark:text-blue-400 lg:bg-blue-50 lg:dark:bg-blue-900/30' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 lg:hover:bg-slate-50 lg:dark:hover:bg-slate-800/50'}`}>
+                            <div className={`p-1.5 lg:p-0 rounded-2xl transition-all duration-300 ${activeTab === 'lager' ? 'bg-blue-50 dark:bg-blue-900/30 lg:bg-transparent' : ''}`}>
+                                <LucideIcon name="box" size={26} />
+                            </div>
+                            <span className="text-[9px] lg:text-sm font-black lg:font-bold uppercase lg:normal-case tracking-widest lg:tracking-normal lg:block md:hidden">Lager</span>
+                        </button>
+                        <button onClick={() => {setActiveTab('planer'); setActiveJobId(null);}} className={`flex flex-col lg:flex-row items-center lg:justify-start gap-1.5 lg:gap-4 flex-1 lg:flex-none w-full p-2 lg:px-5 lg:py-4 rounded-2xl transition-all duration-300 ${activeTab === 'planer' ? 'text-blue-600 dark:text-blue-400 lg:bg-blue-50 lg:dark:bg-blue-900/30' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 lg:hover:bg-slate-50 lg:dark:hover:bg-slate-800/50'}`}>
+                            <div className={`p-1.5 lg:p-0 rounded-2xl transition-all duration-300 ${activeTab === 'planer' ? 'bg-blue-50 dark:bg-blue-900/30 lg:bg-transparent' : ''}`}>
+                                <LucideIcon name="briefcase" size={26} />
+                            </div>
+                            <span className="text-[9px] lg:text-sm font-black lg:font-bold uppercase lg:normal-case tracking-widest lg:tracking-normal lg:block md:hidden">Jobs</span>
+                        </button>
+                        <button onClick={() => {setActiveTab('kalender'); setActiveJobId(null);}} className={`flex flex-col lg:flex-row items-center lg:justify-start gap-1.5 lg:gap-4 flex-1 lg:flex-none w-full p-2 lg:px-5 lg:py-4 rounded-2xl transition-all duration-300 ${activeTab === 'kalender' ? 'text-blue-600 dark:text-blue-400 lg:bg-blue-50 lg:dark:bg-blue-900/30' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 lg:hover:bg-slate-50 lg:dark:hover:bg-slate-800/50'}`}>
+                            <div className={`p-1.5 lg:p-0 rounded-2xl transition-all duration-300 ${activeTab === 'kalender' ? 'bg-blue-50 dark:bg-blue-900/30 lg:bg-transparent' : ''}`}>
+                                <LucideIcon name="calendar" size={26} />
+                            </div>
+                            <span className="text-[9px] lg:text-sm font-black lg:font-bold uppercase lg:normal-case tracking-widest lg:tracking-normal lg:block md:hidden">Kalender</span>
+                        </button>
+                        <button onClick={() => {setActiveTab('stats'); setActiveJobId(null);}} className={`flex flex-col lg:flex-row items-center lg:justify-start gap-1.5 lg:gap-4 flex-1 lg:flex-none w-full p-2 lg:px-5 lg:py-4 rounded-2xl transition-all duration-300 ${activeTab === 'stats' ? 'text-blue-600 dark:text-blue-400 lg:bg-blue-50 lg:dark:bg-blue-900/30' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 lg:hover:bg-slate-50 lg:dark:hover:bg-slate-800/50'}`}>
+                            <div className={`p-1.5 lg:p-0 rounded-2xl transition-all duration-300 ${activeTab === 'stats' ? 'bg-blue-50 dark:bg-blue-900/30 lg:bg-transparent' : ''}`}>
+                                <LucideIcon name="bar-chart-3" size={26} />
+                            </div>
+                            <span className="text-[9px] lg:text-sm font-black lg:font-bold uppercase lg:normal-case tracking-widest lg:tracking-normal lg:block md:hidden">Stats</span>
                         </button>
                     </nav>
 
@@ -1465,8 +1667,8 @@
                                     <p className="text-xs text-blue-600 dark:text-blue-300 mb-4 leading-relaxed">
                                         Damit du deine Daten auf dem Handy siehst, gib diesen Code dort ein:
                                     </p>
-                                    <div className="flex items-center justify-center bg-white dark:bg-slate-800 py-3 rounded-xl border border-blue-200 dark:border-blue-700 mb-4 shadow-inner">
-                                        <span className="text-2xl font-black tracking-[0.2em] text-slate-800 dark:text-white">{syncCode}</span>
+                                    <div className="flex items-center justify-center bg-white dark:bg-slate-800 py-4 rounded-xl border border-blue-200 dark:border-blue-700 mb-4 shadow-inner">
+                                        <span className="text-3xl font-black tracking-[0.2em] text-slate-800 dark:text-white">{syncCode}</span>
                                     </div>
                                     <div className="flex gap-2">
                                         <input 
@@ -1487,7 +1689,7 @@
                                                     setDialog({ type: 'alert', message: 'Der Code muss genau 6 Zeichen lang sein.' });
                                                 }
                                             }} 
-                                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-xl transition-colors font-bold text-sm"
+                                            className="bg-blue-600 hover:bg-blue-700 text-white px-5 rounded-xl transition-colors font-bold text-sm"
                                         >
                                             Verbinden
                                         </button>
@@ -1500,34 +1702,34 @@
                     {/* --- ADD MODAL (Item/Bundle/Job) --- */}
                     {showAddModal && (
                         <div className="fixed inset-0 z-[100] bg-slate-900/60 dark:bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4 transition-colors">
-                            <div className="bg-white dark:bg-slate-800 w-full max-w-md sm:max-w-3xl rounded-t-[3rem] sm:rounded-[3rem] p-8 animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar transition-colors">
+                            <div className={`bg-white dark:bg-slate-800 w-full rounded-t-[3rem] sm:rounded-[3rem] p-6 lg:p-10 animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar transition-colors ${activeTab === 'planer' ? 'sm:max-w-4xl lg:max-w-5xl' : 'sm:max-w-3xl'}`}>
                                 <div className="flex justify-between mb-8 items-center">
-                                    <h2 className="text-2xl font-black">
+                                    <h2 className="text-2xl lg:text-3xl font-black tracking-tight">
                                         {activeTab === 'lager' ? (editingItem ? "Artikel bearbeiten" : "Neuer Artikel") : 
                                          activeTab === 'management' ? (editingItem ? "Bundle bearbeiten" : "Neues Bundle") : 
                                          "Job planen"}
                                     </h2>
-                                    <button onClick={() => {setShowAddModal(false); setEditingItem(null);}}><LucideIcon name="x" className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300" /></button>
+                                    <button onClick={() => {setShowAddModal(false); setEditingItem(null);}} className="bg-slate-100 dark:bg-slate-700 p-2.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"><LucideIcon name="x" className="text-slate-500 dark:text-slate-300" /></button>
                                 </div>
                                 
                                 {activeTab === 'lager' || activeTab === 'management' ? (
-                                    <form onSubmit={saveInventoryItem} className="space-y-6">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                    <form onSubmit={saveInventoryItem} className="space-y-6 lg:space-y-8">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 lg:gap-8">
                                             <div>
-                                                <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1">Name</label>
-                                                <input className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-4 mt-1 font-bold outline-none dark:text-white dark:placeholder-slate-500" placeholder={itemType === 'bundle' ? "z.B. Podcast Koffer" : "z.B. Stativ"} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+                                                <label className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1">Name</label>
+                                                <input className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-2xl p-4 lg:p-5 mt-2 font-bold outline-none text-lg dark:text-white dark:placeholder-slate-500 focus:ring-4 focus:ring-blue-50 dark:focus:ring-blue-900/20 transition-all" placeholder={itemType === 'bundle' ? "z.B. Podcast Koffer" : "z.B. Stativ"} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
                                             </div>
                                             
                                             <div>
-                                                <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1">Bild-URL (Optional)</label>
-                                                <input className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-4 mt-1 font-bold outline-none dark:text-white dark:placeholder-slate-500" placeholder="https://link-zum-bild.jpg" value={formData.imageUrl || ''} onChange={e => setFormData({...formData, imageUrl: e.target.value})} />
+                                                <label className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1">Bild-URL (Optional)</label>
+                                                <input className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-2xl p-4 lg:p-5 mt-2 font-bold outline-none text-lg dark:text-white dark:placeholder-slate-500 focus:ring-4 focus:ring-blue-50 dark:focus:ring-blue-900/20 transition-all" placeholder="https://link-zum-bild.jpg" value={formData.imageUrl || ''} onChange={e => setFormData({...formData, imageUrl: e.target.value})} />
                                             </div>
                                         </div>
 
                                         {itemType === 'item' && (
                                             <div>
-                                                <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1">Kategorie</label>
-                                                <select className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-4 mt-1 font-bold outline-none appearance-none dark:text-white" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+                                                <label className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1">Kategorie</label>
+                                                <select className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-2xl p-4 lg:p-5 mt-2 font-bold outline-none text-lg appearance-none dark:text-white focus:ring-4 focus:ring-blue-50 dark:focus:ring-blue-900/20 transition-all" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
                                                     {categories.map(c => <option key={c} value={c}>{c}</option>)}
                                                     {categories.length === 0 && <option value="Sonstiges">Sonstiges</option>}
                                                 </select>
@@ -1536,27 +1738,27 @@
 
                                         {itemType === 'bundle' && (
                                             <div>
-                                                <label className="text-[10px] font-black text-purple-400 dark:text-purple-500 uppercase ml-1">Artikel & Mengen für das Bundle festlegen</label>
-                                                <div className="mt-2 space-y-2 border border-slate-100 dark:border-slate-700 rounded-2xl p-2 bg-slate-50 dark:bg-slate-900/50 max-h-64 overflow-y-auto custom-scrollbar">
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                <label className="text-xs font-black text-purple-500 dark:text-purple-400 uppercase tracking-widest ml-1">Artikel für das Bundle</label>
+                                                <div className="mt-2 space-y-2 border border-slate-100 dark:border-slate-700 rounded-3xl p-3 bg-slate-50 dark:bg-slate-900/50 max-h-[20rem] lg:max-h-[30rem] overflow-y-auto custom-scrollbar">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                         {inventory.filter(i => !i.isBundle).map(item => {
                                                             const qty = formData.bundleItems[item.id] || 0;
                                                             return (
-                                                                <div key={item.id} className="flex justify-between items-center p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                                                                <div key={item.id} className="flex justify-between items-center p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
                                                                     <div className="flex flex-col truncate mr-2">
-                                                                        <span className="font-bold text-sm dark:text-white truncate">{item.name}</span>
-                                                                        <span className="text-[9px] uppercase text-slate-400 dark:text-slate-500">{item.category}</span>
+                                                                        <span className="font-bold text-sm lg:text-base dark:text-white truncate">{item.name}</span>
+                                                                        <span className="text-[10px] uppercase text-slate-400 dark:text-slate-500 tracking-widest">{item.category}</span>
                                                                     </div>
                                                                     <div className="flex items-center gap-3 shrink-0">
                                                                         <button type="button" onClick={() => {
                                                                             const newB = {...formData.bundleItems};
                                                                             if (newB[item.id] > 1) newB[item.id]--; else delete newB[item.id];
                                                                             setFormData({...formData, bundleItems: newB});
-                                                                        }} className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400"><LucideIcon name="minus" size={14}/></button>
-                                                                        <span className="font-bold w-6 text-center dark:text-white">{qty}x</span>
+                                                                        }} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"><LucideIcon name="minus" size={16}/></button>
+                                                                        <span className="font-bold text-lg w-6 text-center dark:text-white">{qty}x</span>
                                                                         <button type="button" onClick={() => {
                                                                             setFormData({...formData, bundleItems: {...formData.bundleItems, [item.id]: qty + 1}});
-                                                                        }} className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-blue-600 dark:text-blue-400"><LucideIcon name="plus" size={14}/></button>
+                                                                        }} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-blue-600 dark:text-blue-400 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"><LucideIcon name="plus" size={16}/></button>
                                                                     </div>
                                                                 </div>
                                                             )
@@ -1565,35 +1767,37 @@
                                                 </div>
                                             </div>
                                         )}
-                                        <button type="submit" className={`w-full sm:w-1/2 sm:mx-auto block text-white py-5 rounded-[2rem] font-black mt-8 shadow-xl transition-colors ${itemType === 'bundle' ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-200 dark:shadow-none' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-100 dark:shadow-none'}`}>
+                                        <button type="submit" className={`w-full sm:w-1/2 sm:mx-auto block text-white py-5 lg:py-6 rounded-[2rem] font-black text-lg mt-8 shadow-xl transition-transform active:scale-95 ${itemType === 'bundle' ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-200 dark:shadow-none' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200 dark:shadow-none'}`}>
                                             {editingItem ? "Speichern" : "Hinzufügen"}
                                         </button>
                                     </form>
                                 ) : (
-                                    <form onSubmit={createJob} className="space-y-6">
-                                        <div>
-                                            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1">Job Name</label>
-                                            <input className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-4 mt-1 font-bold outline-none dark:text-white dark:placeholder-slate-500" placeholder="z.B. Werbedreh" value={jobFormData.name} onChange={e => setJobFormData({...jobFormData, name: e.target.value})} required />
-                                        </div>
-                                        <div className="flex flex-col sm:flex-row gap-4">
-                                            <div className="flex-1">
-                                                <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1">Start</label>
-                                                <input type="date" className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-4 mt-1 font-bold outline-none text-xs dark:text-white" value={jobFormData.startDate} onChange={e => {
+                                    <form onSubmit={createJob} className="space-y-6 lg:space-y-8">
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+                                            <div className="lg:col-span-2">
+                                                <label className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1">Job Name</label>
+                                                <input autoFocus className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-2xl p-4 lg:p-5 mt-2 font-bold outline-none text-xl dark:text-white dark:placeholder-slate-500 focus:ring-4 focus:ring-blue-50 dark:focus:ring-blue-900/20 transition-all" placeholder="z.B. Werbedreh" value={jobFormData.name} onChange={e => setJobFormData({...jobFormData, name: e.target.value})} required />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1">Startdatum</label>
+                                                <input type="date" className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-2xl p-4 lg:p-5 mt-2 font-bold outline-none text-lg dark:text-white focus:ring-4 focus:ring-blue-50 dark:focus:ring-blue-900/20 transition-all" value={jobFormData.startDate} onChange={e => {
                                                     const newStart = e.target.value;
                                                     setJobFormData({...jobFormData, startDate: newStart, endDate: newStart > jobFormData.endDate ? newStart : jobFormData.endDate});
                                                 }} />
                                             </div>
-                                            <div className="flex-1">
-                                                <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1">Ende</label>
-                                                <input type="date" className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-4 mt-1 font-bold outline-none text-xs dark:text-white" value={jobFormData.endDate} onChange={e => setJobFormData({...jobFormData, endDate: e.target.value})} min={jobFormData.startDate} />
+                                            <div>
+                                                <label className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1">Enddatum</label>
+                                                <input type="date" className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-2xl p-4 lg:p-5 mt-2 font-bold outline-none text-lg dark:text-white focus:ring-4 focus:ring-blue-50 dark:focus:ring-blue-900/20 transition-all" value={jobFormData.endDate} onChange={e => setJobFormData({...jobFormData, endDate: e.target.value})} min={jobFormData.startDate} />
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 pt-6 lg:pt-8 border-t border-slate-100 dark:border-slate-800">
                                             {/* LINKE SPALTE: Equipment hinzufügen */}
-                                            <div>
-                                                <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1 text-blue-600 dark:text-blue-400 mb-2 block">Equipment hinzufügen (Verfügbar)</label>
-                                                <div className="max-h-64 overflow-y-auto custom-scrollbar pr-2">
+                                            <div className="flex flex-col">
+                                                <label className="text-xs font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest ml-1 mb-4 flex items-center gap-2">
+                                                    <LucideIcon name="package-plus" size={18} /> Equipment hinzufügen
+                                                </label>
+                                                <div className="flex-1 bg-slate-50 dark:bg-slate-900/50 p-3 lg:p-4 rounded-3xl border border-slate-100 dark:border-slate-700 max-h-[24rem] lg:max-h-[36rem] overflow-y-auto custom-scrollbar pr-2">
                                                     {Object.entries(groupedInventoryLager).map(([cat, data]) => {
                                                         const hasItems = data.items.length > 0 || Object.values(data.subs).some(subArr => subArr.length > 0);
                                                         if (!hasItems) return null;
@@ -1603,16 +1807,16 @@
                                                         const renderSelectionItem = (item) => {
                                                             if (item.isBundle) {
                                                                 return (
-                                                                    <div key={item.id} className="p-3 rounded-xl border border-purple-100 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-900/10 flex justify-between items-center mb-2">
+                                                                    <div key={item.id} className="p-3 lg:p-4 rounded-2xl border border-purple-100 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-900/10 flex justify-between items-center mb-3">
                                                                         <div className="flex items-center gap-3">
-                                                                            <div className="w-8 h-8 shrink-0 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center overflow-hidden">
-                                                                                {item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-cover" /> : <LucideIcon name="layers" size={14} className="text-purple-500 dark:text-purple-400" />}
+                                                                            <div className="w-10 h-10 shrink-0 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center overflow-hidden">
+                                                                                {item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-cover" /> : <LucideIcon name="layers" size={20} className="text-purple-500 dark:text-purple-400" />}
                                                                             </div>
                                                                             <div className="flex flex-col">
-                                                                                <span className="font-bold text-sm dark:text-white">{item.name}</span>
+                                                                                <span className="font-bold text-sm lg:text-base dark:text-white">{item.name}</span>
                                                                             </div>
                                                                         </div>
-                                                                        <button type="button" onClick={() => addBundleToJob(item)} className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 text-xs font-bold px-3 py-1.5 rounded-lg active:scale-95 transition-transform shrink-0">
+                                                                        <button type="button" onClick={() => addBundleToJob(item)} className="bg-purple-200 dark:bg-purple-800 text-purple-700 dark:text-purple-300 text-xs font-bold px-4 py-2 rounded-xl active:scale-95 hover:bg-purple-300 dark:hover:bg-purple-700 transition-colors shrink-0">
                                                                             Laden
                                                                         </button>
                                                                     </div>
@@ -1622,26 +1826,26 @@
                                                                 const selected = jobFormData.items[item.id] || 0;
                                                                 
                                                                 return (
-                                                                    <div key={item.id} className={`p-3 rounded-xl border flex justify-between items-center transition-all mb-2 ${selected > 0 ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' : 'bg-white border-slate-100 dark:bg-slate-800 dark:border-slate-700'}`}>
+                                                                    <div key={item.id} className={`p-3 lg:p-4 rounded-2xl border flex justify-between items-center transition-all mb-3 ${selected > 0 ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800 shadow-sm' : 'bg-white border-slate-100 dark:bg-slate-800 dark:border-slate-700'}`}>
                                                                         <div className="flex items-center gap-3 min-w-0 pr-2">
-                                                                            <div className="w-8 h-8 shrink-0 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-center overflow-hidden">
-                                                                                {item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-cover" /> : <LucideIcon name="image" size={14} className="text-slate-400 dark:text-slate-500" />}
+                                                                            <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                                                                                {item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-cover" /> : <LucideIcon name="image" size={18} className="text-slate-400 dark:text-slate-500" />}
                                                                             </div>
                                                                             <div className="flex flex-col truncate">
-                                                                                <span className="font-bold text-sm dark:text-white truncate">{item.name}</span>
-                                                                                <span className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500">Frei: {available}</span>
+                                                                                <span className="font-bold text-sm lg:text-base dark:text-white truncate">{item.name}</span>
+                                                                                <span className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest mt-0.5">Frei: {available}</span>
                                                                             </div>
                                                                         </div>
-                                                                        <div className="flex items-center gap-2 shrink-0">
+                                                                        <div className="flex items-center gap-2 lg:gap-3 shrink-0">
                                                                             <button type="button" disabled={selected === 0} onClick={() => {
                                                                                 const newI = {...jobFormData.items};
                                                                                 if (selected > 1) newI[item.id]--; else delete newI[item.id];
                                                                                 setJobFormData({...jobFormData, items: newI});
-                                                                            }} className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 disabled:opacity-30"><LucideIcon name="minus" size={14}/></button>
-                                                                            <span className="font-bold w-4 text-center text-sm dark:text-white">{selected}</span>
+                                                                            }} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"><LucideIcon name="minus" size={16}/></button>
+                                                                            <span className="font-bold w-5 text-center text-sm lg:text-base dark:text-white">{selected}</span>
                                                                             <button type="button" disabled={selected >= available} onClick={() => {
                                                                                 setJobFormData({...jobFormData, items: {...jobFormData.items, [item.id]: selected + 1}});
-                                                                            }} className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-blue-600 dark:text-blue-400 disabled:opacity-30"><LucideIcon name="plus" size={14}/></button>
+                                                                            }} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-blue-600 dark:text-blue-400 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"><LucideIcon name="plus" size={16}/></button>
                                                                         </div>
                                                                     </div>
                                                                 );
@@ -1649,21 +1853,21 @@
                                                         };
 
                                                         return (
-                                                            <div key={cat} className="mb-2">
-                                                                <button type="button" onClick={() => toggleCatPlaner(cat)} className="flex items-center justify-between w-full p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-transparent dark:border-slate-800">
-                                                                    <span className={`text-[10px] font-black uppercase tracking-widest ${cat === 'Bundles' ? 'text-purple-600 dark:text-purple-400' : 'text-slate-500 dark:text-slate-400'}`}>{cat}</span>
-                                                                    <LucideIcon name={isExpanded ? "chevron-up" : "chevron-down"} size={16} className="text-slate-400 dark:text-slate-500"/>
+                                                            <div key={cat} className="mb-3">
+                                                                <button type="button" onClick={() => toggleCatPlaner(cat)} className="flex items-center justify-between w-full p-3 lg:p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm hover:border-blue-200 transition-colors">
+                                                                    <span className={`text-xs font-black uppercase tracking-widest ${cat === 'Bundles' ? 'text-purple-600 dark:text-purple-400' : 'text-slate-600 dark:text-slate-300'}`}>{cat}</span>
+                                                                    <LucideIcon name={isExpanded ? "chevron-up" : "chevron-down"} size={18} className="text-slate-400 dark:text-slate-500"/>
                                                                 </button>
                                                                 
                                                                 {isExpanded && (
-                                                                    <div className="mt-2 pl-2 border-l-2 border-slate-100 dark:border-slate-800 ml-2">
+                                                                    <div className="mt-3 pl-2 border-l-2 border-slate-200 dark:border-slate-700 ml-3 lg:ml-4">
                                                                         {data.items.map(renderSelectionItem)}
                                                                         
                                                                         {Object.entries(data.subs).map(([subCat, subItems]) => {
                                                                             if (subItems.length === 0) return null;
                                                                             return (
-                                                                                <div key={subCat} className="mt-3">
-                                                                                    <h4 className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 mb-2 pl-1">{subCat}</h4>
+                                                                                <div key={subCat} className="mt-4">
+                                                                                    <h4 className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 mb-2 pl-2 tracking-widest">{subCat}</h4>
                                                                                     {subItems.map(renderSelectionItem)}
                                                                                 </div>
                                                                             );
@@ -1677,33 +1881,37 @@
                                             </div>
 
                                             {/* RECHTE SPALTE: Ausgewähltes Equipment (Warenkorb) */}
-                                            <div>
-                                                <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1 block mb-2">Ausgewähltes Equipment</label>
+                                            <div className="flex flex-col">
+                                                <label className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-widest ml-1 mb-4 flex items-center gap-2">
+                                                    <LucideIcon name="shopping-bag" size={18} className="text-slate-400" /> Packliste
+                                                </label>
                                                 {Object.keys(jobFormData.items).length === 0 ? (
-                                                    <div className="h-full min-h-[16rem] bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 flex items-center justify-center">
-                                                        <p className="text-sm text-slate-400 italic">Noch keine Artikel ausgewählt.</p>
+                                                    <div className="flex-1 min-h-[16rem] bg-slate-50 dark:bg-slate-900/50 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
+                                                        <LucideIcon name="shopping-bag" size={48} className="mb-4 opacity-20" />
+                                                        <p className="font-bold">Noch keine Artikel ausgewählt.</p>
+                                                        <p className="text-xs mt-2">Wähle auf der linken Seite das Equipment für diesen Job.</p>
                                                     </div>
                                                 ) : (
-                                                    <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-2xl border border-blue-100 dark:border-blue-800 space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+                                                    <div className="flex-1 bg-blue-50/50 dark:bg-blue-900/10 p-3 lg:p-4 rounded-3xl border border-blue-100 dark:border-blue-900/30 space-y-3 max-h-[24rem] lg:max-h-[36rem] overflow-y-auto custom-scrollbar">
                                                         {Object.entries(jobFormData.items).map(([id, selected]) => {
                                                             const item = inventory.find(i => i.id === id);
                                                             if(!item) return null;
                                                             const available = getAvailableQty(id, jobFormData.startDate, jobFormData.endDate);
                                                             return (
-                                                                <div key={id} className="flex justify-between items-center bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
+                                                                <div key={id} className="flex justify-between items-center bg-white dark:bg-slate-800 p-3 lg:p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
                                                                     <div className="flex flex-col truncate flex-1 mr-2">
-                                                                        <span className="font-bold text-sm dark:text-white truncate">{item.name}</span>
+                                                                        <span className="font-bold text-sm lg:text-base dark:text-white truncate">{item.name}</span>
                                                                     </div>
-                                                                    <div className="flex items-center gap-2 shrink-0">
+                                                                    <div className="flex items-center gap-2 lg:gap-3 shrink-0">
                                                                         <button type="button" onClick={() => {
                                                                             const newI = {...jobFormData.items};
                                                                             if (selected > 1) newI[item.id]--; else delete newI[item.id];
                                                                             setJobFormData({...jobFormData, items: newI});
-                                                                        }} className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400"><LucideIcon name="minus" size={14}/></button>
-                                                                        <span className="font-bold w-4 text-center text-sm dark:text-white">{selected}</span>
+                                                                        }} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"><LucideIcon name="minus" size={16}/></button>
+                                                                        <span className="font-bold w-5 text-center text-sm lg:text-base dark:text-white">{selected}</span>
                                                                         <button type="button" disabled={selected >= available} onClick={() => {
                                                                             setJobFormData({...jobFormData, items: {...jobFormData.items, [item.id]: selected + 1}});
-                                                                        }} className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-blue-600 dark:text-blue-400 disabled:opacity-30"><LucideIcon name="plus" size={14}/></button>
+                                                                        }} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-blue-600 dark:text-blue-400 disabled:opacity-30 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"><LucideIcon name="plus" size={16}/></button>
                                                                     </div>
                                                                 </div>
                                                             )
@@ -1713,7 +1921,7 @@
                                             </div>
                                         </div>
 
-                                        <button type="submit" className="w-full sm:w-1/2 sm:mx-auto block bg-blue-600 hover:bg-blue-700 text-white py-5 rounded-[2rem] font-black mt-8 shadow-xl shadow-blue-100 dark:shadow-none disabled:opacity-50 transition-colors" disabled={!jobFormData.name || Object.keys(jobFormData.items).length === 0}>Job Verbindlich Planen</button>
+                                        <button type="submit" className="w-full sm:w-1/2 sm:mx-auto block bg-blue-600 hover:bg-blue-700 text-white py-6 rounded-[2rem] font-black text-lg mt-10 shadow-2xl shadow-blue-200 dark:shadow-none disabled:opacity-50 transition-transform active:scale-95" disabled={!jobFormData.name || Object.keys(jobFormData.items).length === 0}>Job Verbindlich Planen</button>
                                     </form>
                                 )}
                             </div>
@@ -1723,14 +1931,14 @@
                     {/* --- CUSTOM DIALOG --- */}
                     {dialog && (
                         <div className="fixed inset-0 z-[200] bg-slate-900/60 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 transition-colors">
-                            <div className="bg-white dark:bg-slate-800 w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-700">
-                                <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">{dialog.type === 'confirm' ? 'Bitte bestätigen' : 'Hinweis'}</h3>
-                                <p className="text-sm text-slate-600 dark:text-slate-300 mb-6">{dialog.message}</p>
-                                <div className="flex gap-3 justify-end">
+                            <div className="bg-white dark:bg-slate-800 w-full max-w-sm rounded-[2rem] p-8 shadow-2xl animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-700">
+                                <h3 className="text-xl font-black text-slate-800 dark:text-white mb-3">{dialog.type === 'confirm' ? 'Bitte bestätigen' : 'Hinweis'}</h3>
+                                <p className="text-base text-slate-600 dark:text-slate-300 mb-8 leading-relaxed">{dialog.message}</p>
+                                <div className="flex gap-4 justify-end">
                                     {dialog.type === 'confirm' && (
-                                        <button onClick={() => setDialog(null)} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 active:bg-slate-200 dark:active:bg-slate-600 transition-colors">Abbrechen</button>
+                                        <button onClick={() => setDialog(null)} className="px-6 py-3 rounded-xl text-sm font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">Abbrechen</button>
                                     )}
-                                    <button onClick={() => { if(dialog.onConfirm) dialog.onConfirm(); else setDialog(null); }} className="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors">OK</button>
+                                    <button onClick={() => { if(dialog.onConfirm) dialog.onConfirm(); else setDialog(null); }} className="px-6 py-3 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md transition-colors">OK</button>
                                 </div>
                             </div>
                         </div>
