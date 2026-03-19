@@ -124,6 +124,7 @@
             const [expandedCatsLager, setExpandedCatsLager] = useState({});
             const [expandedCatsPlaner, setExpandedCatsPlaner] = useState({});
             const [showCompletedJobs, setShowCompletedJobs] = useState(false); // Toggle für abgeschlossene Jobs
+            const [showCancelledJobs, setShowCancelledJobs] = useState(false); // NEU: Toggle für stornierte Jobs
 
             const [currentDate, setCurrentDate] = useState(new Date());
             const [dialog, setDialog] = useState(null);
@@ -244,6 +245,7 @@
                                 let newPacking = j.packingStatus || {};
                                 let newReturn = j.returnStatus || {};
                                 let newAccReturn = j.returnAccessoryStatus || {};
+                                let currentStatus = j.status || (j.isCompleted ? 'completed' : 'active');
                                 
                                 Object.keys(newSelected || {}).forEach(id => {
                                     const qty = newSelected[id] || 1;
@@ -267,7 +269,7 @@
                                     packingStatus: newPacking,
                                     returnStatus: newReturn,
                                     returnAccessoryStatus: newAccReturn,
-                                    isCompleted: j.isCompleted || false
+                                    status: currentStatus
                                 };
                             });
                             setJobs(migratedJobs);
@@ -320,28 +322,66 @@
             // Setze Job Mode auf Packen, wenn ein anderer Job geöffnet wird
             useEffect(() => {
                 if (activeJobId && activeJob) {
-                    setJobMode(activeJob.isCompleted ? 'return' : 'packen');
+                    setJobMode(activeJob.status === 'completed' ? 'return' : 'packen');
                 }
             }, [activeJobId]);
+
+            // Benachrichtigungen: Jobs die morgen starten
+            const upcomingJobs = useMemo(() => {
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const tomorrowStr = tomorrow.toISOString().split('T')[0];
+                return jobs.filter(j => j.status === 'active' && j.startDate === tomorrowStr);
+            }, [jobs]);
+
+            useEffect(() => {
+                if (upcomingJobs.length > 0 && "Notification" in window) {
+                    if (Notification.permission === "granted") {
+                        if (!sessionStorage.getItem('techpack_notified')) {
+                            const jobNames = upcomingJobs.map(j => j.name).join(', ');
+                            new Notification("TechPack Erinnerung", { body: `Morgen starten: ${jobNames}` });
+                            sessionStorage.setItem('techpack_notified', 'true');
+                        }
+                    } else if (Notification.permission !== "denied") {
+                        Notification.requestPermission();
+                    }
+                }
+            }, [upcomingJobs]);
 
             const usageStats = useMemo(() => {
                 const stats = {};
                 inventory.forEach(item => stats[item.id] = 0);
                 jobs.forEach(job => {
-                    Object.entries(job.selectedItemIds || {}).forEach(([id, qty]) => {
-                        if (stats[id] !== undefined) stats[id] += qty;
-                    });
+                    if (job.status !== 'cancelled') {
+                        Object.entries(job.selectedItemIds || {}).forEach(([id, qty]) => {
+                            if (stats[id] !== undefined && qty > 0) stats[id] += 1; // Zählt die Jobeinsätze, nicht die Stückzahl
+                        });
+                    }
                 });
                 return stats;
             }, [jobs, inventory]);
+
+            const lastUsedStats = useMemo(() => {
+                const stats = {};
+                jobs.forEach(job => {
+                    if (job.status !== 'cancelled') {
+                        Object.keys(job.selectedItemIds || {}).forEach(id => {
+                            const jobDate = new Date(job.endDate);
+                            if (!stats[id] || jobDate > new Date(stats[id])) {
+                                stats[id] = job.endDate;
+                            }
+                        });
+                    }
+                });
+                return stats;
+            }, [jobs]);
 
             const getAvailableQty = (itemId, startStr, endStr) => {
                 const item = inventory.find(i => i.id === itemId);
                 if (!item || item.isBundle) return 0;
                 let used = 0;
                 jobs.forEach(j => {
-                    // Abgeschlossene Jobs blockieren kein Inventar mehr!
-                    if (!j.isCompleted && j.startDate <= endStr && j.endDate >= startStr) {
+                    if (j.status === 'active' && j.startDate <= endStr && j.endDate >= startStr) {
                         if (j.selectedItemIds[itemId]) {
                             used += j.selectedItemIds[itemId];
                         }
@@ -585,10 +625,31 @@
                     returnStatus: rStatus,
                     accessoryStatus: aStatus,
                     returnAccessoryStatus: raStatus,
-                    isCompleted: false
+                    status: 'active'
                 }]);
                 setJobFormData({ name: "", startDate: todayStr, endDate: todayStr, items: {} });
                 setShowAddModal(false);
+            };
+
+            const changeJobStatus = (jobId, newStatus) => {
+                setJobs(jobs.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
+                if (newStatus === 'completed') {
+                    setDialog({ type: 'alert', message: 'Job abgeschlossen! Das Equipment ist wieder für andere Jobs verfügbar.' });
+                } else if (newStatus === 'cancelled') {
+                    setDialog({ type: 'alert', message: 'Job storniert. Das Equipment wurde wieder freigegeben.' });
+                    setActiveJobId(null);
+                }
+            };
+
+            const confirmCancelJob = (id) => {
+                setDialog({
+                    type: 'confirm',
+                    message: 'Job wirklich stornieren? Das Equipment wird sofort wieder verfügbar.',
+                    onConfirm: () => {
+                        changeJobStatus(id, 'cancelled');
+                        setDialog(null);
+                    }
+                });
             };
 
             const togglePackingStatus = (jobId, itemId, requiredQty) => {
@@ -752,6 +813,18 @@
                     </header>
 
                     <main className="px-4 mt-8 max-w-lg mx-auto">
+                        {upcomingJobs.length > 0 && activeTab === 'planer' && !activeJobId && (
+                            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-5 rounded-[2rem] mb-8 shadow-xl shadow-blue-200/50 dark:shadow-none flex items-center gap-4 animate-in slide-in-from-top duration-500">
+                                <div className="bg-white/20 p-3 rounded-2xl shrink-0">
+                                    <LucideIcon name="bell-ring" size={24} />
+                                </div>
+                                <div>
+                                    <p className="font-black text-xs uppercase tracking-widest opacity-90 mb-0.5">Startet Morgen</p>
+                                    <p className="font-bold">{upcomingJobs.map(j => j.name).join(', ')}</p>
+                                </div>
+                            </div>
+                        )}
+
                         {activeJobId && activeJob ? (
                             <div className="animate-in slide-in-from-right duration-300">
                                 <button onClick={() => setActiveJobId(null)} className="flex items-center gap-2 text-slate-400 dark:text-slate-500 font-bold text-xs uppercase mb-6">
@@ -760,8 +833,11 @@
                                 
                                 <div className="flex justify-between items-start mb-6">
                                     <div>
-                                        {activeJob.isCompleted && (
+                                        {activeJob.status === 'completed' && (
                                             <span className="inline-block bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 text-[10px] font-black uppercase px-2 py-1 rounded-md mb-2">Abgeschlossen</span>
+                                        )}
+                                        {activeJob.status === 'cancelled' && (
+                                            <span className="inline-block bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400 text-[10px] font-black uppercase px-2 py-1 rounded-md mb-2">Storniert</span>
                                         )}
                                         <h2 className="text-2xl font-black mb-1">{activeJob.name}</h2>
                                         <p className="text-blue-600 dark:text-blue-400 text-sm font-bold">
@@ -771,6 +847,9 @@
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <button onClick={exportPDF} title="PDF Packliste herunterladen" className="text-blue-600 dark:text-blue-400 p-2.5 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-xl transition-colors"><LucideIcon name="file-down" size={20} /></button>
+                                        {activeJob.status === 'active' && (
+                                            <button onClick={() => confirmCancelJob(activeJob.id)} title="Job stornieren" className="text-orange-400 dark:text-orange-500 p-2.5 bg-orange-50 dark:bg-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/50 rounded-xl transition-colors"><LucideIcon name="ban" size={20} /></button>
+                                        )}
                                         <button onClick={() => confirmDeleteJob(activeJob.id)} title="Job löschen" className="text-red-400 dark:text-red-500 p-2.5 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-xl transition-colors"><LucideIcon name="trash-2" size={20} /></button>
                                     </div>
                                 </div>
@@ -879,8 +958,8 @@
 
                                 {/* --- JOB ABSCHLIESSEN BUTTON --- */}
                                 <div className="pb-8">
-                                    {activeJob.isCompleted ? (
-                                        <button onClick={() => toggleJobCompletion(activeJob.id)} className="w-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 py-5 rounded-[2rem] font-black mt-4 transition-colors flex items-center justify-center gap-2">
+                                    {activeJob.status === 'completed' || activeJob.status === 'cancelled' ? (
+                                        <button onClick={() => changeJobStatus(activeJob.id, 'active')} className="w-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 py-5 rounded-[2rem] font-black mt-4 transition-colors flex items-center justify-center gap-2">
                                             <LucideIcon name="folder-open" size={20}/> Job wieder öffnen
                                         </button>
                                     ) : (
@@ -888,10 +967,10 @@
                                             onClick={() => {
                                                 if (progressPercent < 100 && jobMode === 'return') {
                                                     if(confirm('Es sind noch nicht alle Items zurückgecheckt. Job trotzdem abschließen?')) {
-                                                        toggleJobCompletion(activeJob.id);
+                                                        changeJobStatus(activeJob.id, 'completed');
                                                     }
                                                 } else {
-                                                    toggleJobCompletion(activeJob.id);
+                                                    changeJobStatus(activeJob.id, 'completed');
                                                 }
                                             }} 
                                             className={`w-full text-white py-5 rounded-[2rem] font-black mt-4 shadow-xl transition-colors flex items-center justify-center gap-2 ${jobMode === 'return' && progressPercent === 100 ? 'bg-green-600 hover:bg-green-700 shadow-green-200 dark:shadow-none' : 'bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 shadow-slate-300 dark:shadow-none'}`}
@@ -904,8 +983,9 @@
                         ) : (
                             <div className="space-y-6">
                                 {activeTab === 'planer' && (() => {
-                                    const pendingJobs = jobs.filter(j => !j.isCompleted).sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
-                                    const completedJobs = jobs.filter(j => j.isCompleted).sort((a,b) => new Date(b.endDate) - new Date(a.endDate));
+                                    const pendingJobs = jobs.filter(j => j.status === 'active').sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
+                                    const completedJobs = jobs.filter(j => j.status === 'completed').sort((a,b) => new Date(b.endDate) - new Date(a.endDate));
+                                    const cancelledJobs = jobs.filter(j => j.status === 'cancelled').sort((a,b) => new Date(b.endDate) - new Date(a.endDate));
 
                                     return (
                                         <>
@@ -916,8 +996,8 @@
                                             
                                             {/* ANSTEHENDE JOBS */}
                                             {pendingJobs.length > 0 && <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 px-2 mb-4">Anstehende Jobs</h3>}
-                                            {pendingJobs.length === 0 && completedJobs.length === 0 && <p className="text-center text-slate-400 dark:text-slate-500 py-10">Keine Jobs geplant.</p>}
-                                            {pendingJobs.length === 0 && completedJobs.length > 0 && <p className="text-center text-slate-400 dark:text-slate-500 py-6 italic text-sm">Keine anstehenden Jobs.</p>}
+                                            {pendingJobs.length === 0 && completedJobs.length === 0 && cancelledJobs.length === 0 && <p className="text-center text-slate-400 dark:text-slate-500 py-10">Keine Jobs geplant.</p>}
+                                            {pendingJobs.length === 0 && (completedJobs.length > 0 || cancelledJobs.length > 0) && <p className="text-center text-slate-400 dark:text-slate-500 py-6 italic text-sm">Keine anstehenden Jobs.</p>}
                                             
                                             <div className="space-y-4">
                                                 {pendingJobs.map(job => (
@@ -973,6 +1053,32 @@
                                                     )}
                                                 </div>
                                             )}
+
+                                            {/* STORNIERTE JOBS */}
+                                            {cancelledJobs.length > 0 && (
+                                                <div className="mt-4">
+                                                    <button onClick={() => setShowCancelledJobs(!showCancelledJobs)} className="flex items-center justify-between w-full px-2 py-4 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+                                                        <h3 className="text-xs font-black uppercase tracking-widest">Stornierte Jobs ({cancelledJobs.length})</h3>
+                                                        <LucideIcon name={showCancelledJobs ? "chevron-up" : "chevron-down"} size={16} />
+                                                    </button>
+                                                    
+                                                    {showCancelledJobs && (
+                                                        <div className="space-y-4 mt-2">
+                                                            {cancelledJobs.map(job => (
+                                                                <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-red-50/50 dark:bg-red-900/10 p-6 rounded-[2rem] border border-red-100 dark:border-red-900/30 active:scale-95 transition-all cursor-pointer opacity-70 hover:opacity-100">
+                                                                    <div className="flex justify-between items-start mb-1">
+                                                                        <p className="text-red-400 dark:text-red-500 text-[10px] font-black uppercase">
+                                                                            {new Date(job.startDate).toLocaleDateString('de-DE')}
+                                                                        </p>
+                                                                        <LucideIcon name="ban" size={16} className="text-red-400 dark:text-red-500" />
+                                                                    </div>
+                                                                    <h3 className="text-lg font-bold mb-1 text-slate-600 dark:text-slate-300 line-through decoration-red-300 dark:decoration-red-800">{job.name}</h3>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </>
                                     );
                                 })()}
@@ -1016,11 +1122,11 @@
                                                 const cMonth = currentDate.getMonth();
                                                 return cMonth >= sMonth && cMonth <= eMonth;
                                             }).map(j => (
-                                                <div key={j.id} onClick={() => setActiveJobId(j.id)} className="bg-white dark:bg-slate-800 p-4 rounded-2xl flex justify-between items-center border border-slate-100 dark:border-slate-700 shadow-sm cursor-pointer transition-colors">
+                                                <div key={j.id} onClick={() => setActiveJobId(j.id)} className={`bg-white dark:bg-slate-800 p-4 rounded-2xl flex justify-between items-center border border-slate-100 dark:border-slate-700 shadow-sm cursor-pointer transition-colors ${j.status === 'cancelled' ? 'opacity-50' : ''}`}>
                                                     <div className="flex items-center gap-3">
-                                                        <div className={`w-2 h-2 rounded-full ${j.isCompleted ? 'bg-green-500' : 'bg-blue-600 dark:bg-blue-400'}`}></div>
+                                                        <div className={`w-2 h-2 rounded-full ${j.status === 'completed' ? 'bg-green-500' : j.status === 'cancelled' ? 'bg-orange-500' : 'bg-blue-600 dark:bg-blue-400'}`}></div>
                                                         <div className="flex flex-col">
-                                                            <span className={`font-bold text-sm ${j.isCompleted ? 'text-slate-500 dark:text-slate-400 line-through' : ''}`}>{j.name}</span>
+                                                            <span className={`font-bold text-sm ${j.status === 'completed' || j.status === 'cancelled' ? 'text-slate-500 dark:text-slate-400 line-through' : ''}`}>{j.name}</span>
                                                             <span className="text-[10px] text-slate-400 dark:text-slate-500">{new Date(j.startDate).toLocaleDateString('de-DE')} {j.startDate !== j.endDate && `- ${new Date(j.endDate).toLocaleDateString('de-DE')}`}</span>
                                                         </div>
                                                     </div>
@@ -1117,9 +1223,9 @@
                                     <div className="space-y-6">
                                         <h2 className="text-xl font-bold px-2">Statistik</h2>
                                         <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
-                                            <h3 className="font-bold mb-4">Top Equipment</h3>
+                                            <h3 className="font-bold mb-4">Top Equipment (Top 10)</h3>
                                             <div className="space-y-4">
-                                                {inventory.filter(i=>!i.isBundle).sort((a,b) => usageStats[b.id] - usageStats[a.id]).slice(0, 5).map(item => (
+                                                {inventory.filter(i=>!i.isBundle).sort((a,b) => usageStats[b.id] - usageStats[a.id]).slice(0, 10).map(item => (
                                                     <div key={item.id}>
                                                         <div className="flex justify-between text-xs font-bold mb-1">
                                                             <span>{item.name}</span>
@@ -1132,6 +1238,33 @@
                                                 ))}
                                                 {inventory.length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500">Keine Daten</p>}
                                             </div>
+                                        </div>
+
+                                        <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors mt-6">
+                                            <button onClick={() => setExpandedCatsPlaner(prev => ({...prev, 'lastUsed': !prev['lastUsed']}))} className="flex justify-between items-center w-full">
+                                                <h3 className="font-bold">Zuletzt genutzt Historie</h3>
+                                                <LucideIcon name={expandedCatsPlaner['lastUsed'] ? "chevron-up" : "chevron-down"} size={20} className="text-slate-400" />
+                                            </button>
+                                            {expandedCatsPlaner['lastUsed'] && (
+                                                <div className="mt-6 space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+                                                    {inventory.filter(i=>!i.isBundle).sort((a,b) => {
+                                                        const dateA = lastUsedStats[a.id] ? new Date(lastUsedStats[a.id]) : new Date(0);
+                                                        const dateB = lastUsedStats[b.id] ? new Date(lastUsedStats[b.id]) : new Date(0);
+                                                        return dateB - dateA; // Neueste zuerst
+                                                    }).map(item => (
+                                                        <div key={item.id} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                                                            <div className="flex flex-col">
+                                                                <span className="font-bold text-sm dark:text-white">{item.name}</span>
+                                                                <span className="text-[10px] uppercase text-slate-400 dark:text-slate-500">{item.category}</span>
+                                                            </div>
+                                                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                                                                {lastUsedStats[item.id] ? new Date(lastUsedStats[item.id]).toLocaleDateString('de-DE') : 'Nie'}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                    {inventory.filter(i=>!i.isBundle).length === 0 && <p className="text-xs text-slate-400">Kein Equipment vorhanden</p>}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -1298,7 +1431,7 @@
 
                                         {itemType === 'bundle' && (
                                             <div>
-                                                <label className="text-[10px] font-black text-purple-400 dark:text-purple-500 uppercase ml-1">Artikel zum Bundle hinzufügen</label>
+                                                <label className="text-[10px] font-black text-purple-400 dark:text-purple-500 uppercase ml-1">Artikel & Mengen für das Bundle festlegen</label>
                                                 <div className="mt-2 space-y-2 border border-slate-100 dark:border-slate-700 rounded-2xl p-2 bg-slate-50 dark:bg-slate-900/50 max-h-48 overflow-y-auto custom-scrollbar">
                                                     {inventory.filter(i => !i.isBundle).map(item => {
                                                         const qty = formData.bundleItems[item.id] || 0;
@@ -1314,7 +1447,7 @@
                                                                         if (newB[item.id] > 1) newB[item.id]--; else delete newB[item.id];
                                                                         setFormData({...formData, bundleItems: newB});
                                                                     }} className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400"><LucideIcon name="minus" size={14}/></button>
-                                                                    <span className="font-bold w-4 text-center dark:text-white">{qty}</span>
+                                                                    <span className="font-bold w-6 text-center dark:text-white">{qty}x</span>
                                                                     <button type="button" onClick={() => {
                                                                         setFormData({...formData, bundleItems: {...formData.bundleItems, [item.id]: qty + 1}});
                                                                     }} className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-blue-600 dark:text-blue-400"><LucideIcon name="plus" size={14}/></button>
@@ -1348,8 +1481,42 @@
                                                 <input type="date" className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-4 mt-1 font-bold outline-none text-xs dark:text-white" value={jobFormData.endDate} onChange={e => setJobFormData({...jobFormData, endDate: e.target.value})} min={jobFormData.startDate} />
                                             </div>
                                         </div>
+
                                         <div>
-                                            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1 text-blue-600 dark:text-blue-400 mb-2 block">Equipment wählen (Verfügbar)</label>
+                                            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1 block mb-2">Ausgewähltes Equipment</label>
+                                            {Object.keys(jobFormData.items).length === 0 ? (
+                                                <p className="text-xs text-slate-400 italic ml-1 mb-6">Noch keine Artikel ausgewählt.</p>
+                                            ) : (
+                                                <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-2xl border border-blue-100 dark:border-blue-800 space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                                                    {Object.entries(jobFormData.items).map(([id, selected]) => {
+                                                        const item = inventory.find(i => i.id === id);
+                                                        if(!item) return null;
+                                                        const available = getAvailableQty(id, jobFormData.startDate, jobFormData.endDate);
+                                                        return (
+                                                            <div key={id} className="flex justify-between items-center bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
+                                                                <div className="flex flex-col truncate flex-1 mr-2">
+                                                                    <span className="font-bold text-sm dark:text-white truncate">{item.name}</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-3">
+                                                                    <button type="button" onClick={() => {
+                                                                        const newI = {...jobFormData.items};
+                                                                        if (selected > 1) newI[item.id]--; else delete newI[item.id];
+                                                                        setJobFormData({...jobFormData, items: newI});
+                                                                    }} className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400"><LucideIcon name="minus" size={14}/></button>
+                                                                    <span className="font-bold w-4 text-center text-sm dark:text-white">{selected}</span>
+                                                                    <button type="button" disabled={selected >= available} onClick={() => {
+                                                                        setJobFormData({...jobFormData, items: {...jobFormData.items, [item.id]: selected + 1}});
+                                                                    }} className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-blue-600 dark:text-blue-400 disabled:opacity-30"><LucideIcon name="plus" size={14}/></button>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1 text-blue-600 dark:text-blue-400 mb-2 block">Equipment hinzufügen (Verfügbar)</label>
                                             
                                             {Object.entries(groupedInventoryLager).map(([cat, data]) => {
                                                 const hasItems = data.items.length > 0 || Object.values(data.subs).some(subArr => subArr.length > 0);
