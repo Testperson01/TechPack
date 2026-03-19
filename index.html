@@ -117,14 +117,14 @@
             const [jobMode, setJobMode] = useState('packen'); // 'packen' oder 'return'
             
             const [showAddModal, setShowAddModal] = useState(false);
-            const [showCategoryModal, setShowCategoryModal] = useState(false);
+            const [showSettingsModal, setShowSettingsModal] = useState(false);
             const [editingItem, setEditingItem] = useState(null);
             const [expandedItems, setExpandedItems] = useState({});
             
             const [expandedCatsLager, setExpandedCatsLager] = useState({});
             const [expandedCatsPlaner, setExpandedCatsPlaner] = useState({});
-            const [showCompletedJobs, setShowCompletedJobs] = useState(false); // Toggle für abgeschlossene Jobs
-            const [showCancelledJobs, setShowCancelledJobs] = useState(false); // NEU: Toggle für stornierte Jobs
+            const [showCompletedJobs, setShowCompletedJobs] = useState(false); 
+            const [showCancelledJobs, setShowCancelledJobs] = useState(false); 
 
             const [currentDate, setCurrentDate] = useState(new Date());
             const [dialog, setDialog] = useState(null);
@@ -354,7 +354,7 @@
                 jobs.forEach(job => {
                     if (job.status !== 'cancelled') {
                         Object.entries(job.selectedItemIds || {}).forEach(([id, qty]) => {
-                            if (stats[id] !== undefined && qty > 0) stats[id] += 1; // Zählt die Jobeinsätze, nicht die Stückzahl
+                            if (stats[id] !== undefined && qty > 0) stats[id] += 1; 
                         });
                     }
                 });
@@ -433,13 +433,12 @@
                     const item = inventory.find(i => i.id === invId);
                     if (!item) return;
                     const catName = item.category || 'Sonstiges';
-                    const mainCat = catName.split(' - ')[0]; // Optional: aufteilen für übergeordnete Kategorien, hier belassen wir es auf genauen Namen
+                    const mainCat = catName.split(' - ')[0]; 
                     
                     if (!grouped[catName]) grouped[catName] = [];
                     grouped[catName].push({ invId, requiredQty, item });
                 });
                 
-                // Sortiere die Gruppen alphabetisch
                 return Object.keys(grouped).sort().reduce((acc, key) => {
                     acc[key] = grouped[key];
                     return acc;
@@ -822,10 +821,7 @@
                                     {syncStatus === 'no-config' && <LucideIcon name="cloud-off" size={20} className="text-slate-400 dark:text-slate-500" onClick={() => setDialog({ type: 'alert', message: "Cloud Sync ist inaktiv. Bitte Firebase Config ergänzen." })} />}
                                     {syncStatus === 'error' && <LucideIcon name="alert-triangle" size={20} className="text-red-500 dark:text-red-400" onClick={() => setDialog({ type: 'alert', message: "Fehler bei der Verbindung zur Cloud." })} />}
                                 </div>
-                                <button onClick={() => setIsDarkMode(!isDarkMode)} className="bg-slate-100 dark:bg-slate-800 p-2.5 rounded-full text-slate-400 dark:text-slate-400 transition-colors">
-                                    <LucideIcon name={isDarkMode ? "sun" : "moon"} size={20} />
-                                </button>
-                                <button onClick={() => setShowCategoryModal(true)} className="bg-slate-100 dark:bg-slate-800 p-2.5 rounded-full text-slate-400 dark:text-slate-400 transition-colors">
+                                <button onClick={() => setShowSettingsModal(true)} className="bg-slate-100 dark:bg-slate-800 p-2.5 rounded-full text-slate-400 dark:text-slate-400 transition-colors">
                                     <LucideIcon name="settings" size={20} />
                                 </button>
                             </div>
@@ -1316,6 +1312,93 @@
                                         </div>
                                     </div>
                                 )}
+
+                                {activeTab === 'management' && (
+                                    <div className="space-y-8 animate-in fade-in duration-300">
+                                        <div className="flex justify-between items-center px-2">
+                                            <h2 className="text-xl font-bold">Management</h2>
+                                        </div>
+
+                                        {/* KATEGORIEN */}
+                                        <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+                                            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest mb-6">Kategorien</h3>
+                                            
+                                            <div className="space-y-4 mb-8">
+                                                {(() => {
+                                                    const catHierarchy = {};
+                                                    categories.forEach(c => {
+                                                        const parts = c.split(' - ');
+                                                        const main = parts[0];
+                                                        if (!catHierarchy[main]) catHierarchy[main] = [];
+                                                        if (parts.length > 1) catHierarchy[main].push({ full: c, sub: parts[1] });
+                                                    });
+
+                                                    return Object.entries(catHierarchy).map(([main, subs]) => (
+                                                        <div key={main} className="mb-2">
+                                                            <div className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                                                                <span className="font-bold text-sm">{main}</span>
+                                                                <button onClick={() => deleteCategory(main)} className="text-red-400 dark:text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><LucideIcon name="trash-2" size={16} /></button>
+                                                            </div>
+                                                            {subs.length > 0 && (
+                                                                <div className="pl-4 mt-2 space-y-2 border-l-2 border-slate-100 dark:border-slate-700 ml-4">
+                                                                    {subs.map(s => (
+                                                                        <div key={s.full} className="flex justify-between items-center p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700">
+                                                                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">{s.sub}</span>
+                                                                            <button onClick={() => deleteCategory(s.full)} className="text-red-300 dark:text-red-400 p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><LucideIcon name="trash-2" size={14} /></button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ));
+                                                })()}
+                                                {categories.length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500 italic">Keine Kategorien vorhanden.</p>}
+                                            </div>
+                                            
+                                            <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase mb-3">Neue Kategorie</h3>
+                                            <div className="space-y-2">
+                                                <select 
+                                                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-3 font-bold outline-none text-sm appearance-none dark:text-white" 
+                                                    value={newCatParent} 
+                                                    onChange={e=>setNewCatParent(e.target.value)}
+                                                >
+                                                    <option value="">-- Als Hauptkategorie --</option>
+                                                    {categories.filter(c => !c.includes(' - ')).map(c => <option key={c} value={c}>Unterkategorie von: {c}</option>)}
+                                                </select>
+                                                <div className="flex gap-2">
+                                                    <input className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-3 font-bold outline-none text-sm dark:text-white dark:placeholder-slate-500" placeholder="Name der Kategorie..." value={newCatName} onChange={e=>setNewCatName(e.target.value)} />
+                                                    <button onClick={addCategory} className="bg-blue-600 hover:bg-blue-700 text-white px-5 rounded-xl transition-colors"><LucideIcon name="plus" size={20}/></button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* BUNDLES */}
+                                        <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+                                            <div className="flex justify-between items-center mb-6">
+                                                <h3 className="text-sm font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest">Bundles</h3>
+                                                <button onClick={() => {setEditingItem(null); setItemType('bundle'); setFormData({name: "", category: "Bundles", quantity: 1, bundleItems: {}, imageUrl: ""}); setShowAddModal(true);}} className="bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 p-2 rounded-xl transition-colors hover:bg-purple-200 dark:hover:bg-purple-900/50"><LucideIcon name="plus" size={16}/></button>
+                                            </div>
+                                            
+                                            <div className="space-y-3">
+                                                {inventory.filter(i => i.isBundle).map(bundle => (
+                                                    <div key={bundle.id} className="flex justify-between items-center p-4 bg-purple-50/50 dark:bg-purple-900/10 rounded-xl border border-purple-100 dark:border-purple-800/30">
+                                                        <div className="flex flex-col flex-1 mr-4">
+                                                            <span className="font-bold text-sm dark:text-white">{bundle.name}</span>
+                                                            <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 line-clamp-1">
+                                                                {Object.entries(bundle.bundleItems || {}).map(([bId, qty]) => `${qty}x ${inventory.find(i=>i.id===bId)?.name}`).join(', ')}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex gap-2 shrink-0">
+                                                            <button onClick={() => {setEditingItem(bundle); setItemType('bundle'); setFormData({name: bundle.name, category: "Bundles", quantity: 1, bundleItems: bundle.bundleItems || {}, imageUrl: bundle.imageUrl || ""}); setShowAddModal(true);}} className="text-slate-400 dark:text-slate-500 p-2 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors"><LucideIcon name="edit-2" size={16} /></button>
+                                                            <button onClick={() => confirmDeleteItem(bundle.id)} className="text-red-400 dark:text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><LucideIcon name="trash-2" size={16} /></button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                {inventory.filter(i => i.isBundle).length === 0 && <p className="text-xs text-slate-400 italic">Keine Bundles vorhanden.</p>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </main>
@@ -1346,19 +1429,36 @@
                             </div>
                             <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest">Stats</span>
                         </button>
+                        <button onClick={() => {setActiveTab('management'); setActiveJobId(null);}} className={`flex flex-col items-center gap-1.5 flex-1 md:flex-none w-full ${activeTab === 'management' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-500 dark:hover:text-slate-300'}`}>
+                            <div className={`p-2 rounded-2xl transition-all duration-300 ${activeTab === 'management' ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}>
+                                <LucideIcon name="sliders" size={26} />
+                            </div>
+                            <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest">Manage</span>
+                        </button>
                     </nav>
 
-                    {/* --- CATEGORY MODAL --- */}
-                    {showCategoryModal && (
+                    {/* --- SETTINGS MODAL --- */}
+                    {showSettingsModal && (
                         <div className="fixed inset-0 z-[100] bg-slate-900/60 dark:bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4 transition-colors">
-                            <div className="bg-white dark:bg-slate-800 w-full max-w-md sm:max-w-xl rounded-t-[3rem] sm:rounded-[3rem] p-8 animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 shadow-2xl max-h-[85vh] overflow-y-auto custom-scrollbar transition-colors">
+                            <div className="bg-white dark:bg-slate-800 w-full max-w-md sm:max-w-xl rounded-t-[3rem] sm:rounded-[3rem] p-8 animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 shadow-2xl transition-colors">
                                 <div className="flex justify-between mb-8 items-center">
                                     <h2 className="text-2xl font-black">Einstellungen</h2>
-                                    <button onClick={() => setShowCategoryModal(false)}><LucideIcon name="x" className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300" /></button>
+                                    <button onClick={() => setShowSettingsModal(false)}><LucideIcon name="x" className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300" /></button>
+                                </div>
+
+                                {/* --- THEME TOGGLE --- */}
+                                <div className="mb-6 p-5 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                                    <div className="flex items-center gap-3">
+                                        <LucideIcon name={isDarkMode ? "moon" : "sun"} size={20} className="text-slate-500" />
+                                        <span className="font-bold text-sm">Erscheinungsbild</span>
+                                    </div>
+                                    <button onClick={() => setIsDarkMode(!isDarkMode)} className="bg-white dark:bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 font-bold text-xs uppercase tracking-widest text-slate-500 w-20">
+                                        {isDarkMode ? "Dark" : "Light"}
+                                    </button>
                                 </div>
 
                                 {/* --- SYNC CODE SECTION --- */}
-                                <div className="mb-8 p-5 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-800">
+                                <div className="p-5 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-800">
                                     <h3 className="text-sm font-black text-blue-800 dark:text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-2">
                                         <LucideIcon name="smartphone-nfc" size={16}/> Geräte koppeln
                                     </h3>
@@ -1393,78 +1493,25 @@
                                         </button>
                                     </div>
                                 </div>
-
-                                {/* --- CATEGORIES SECTION --- */}
-                                <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest mb-4">Kategorien</h3>
-                                <div className="space-y-4 mb-8">
-                                    {(() => {
-                                        const catHierarchy = {};
-                                        categories.forEach(c => {
-                                            const parts = c.split(' - ');
-                                            const main = parts[0];
-                                            if (!catHierarchy[main]) catHierarchy[main] = [];
-                                            if (parts.length > 1) catHierarchy[main].push({ full: c, sub: parts[1] });
-                                        });
-
-                                        return Object.entries(catHierarchy).map(([main, subs]) => (
-                                            <div key={main} className="mb-2">
-                                                <div className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-700">
-                                                    <span className="font-bold">{main}</span>
-                                                    <button onClick={() => deleteCategory(main)} className="text-red-400 dark:text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-full transition-colors"><LucideIcon name="trash-2" size={18} /></button>
-                                                </div>
-                                                {subs.length > 0 && (
-                                                    <div className="pl-4 mt-2 space-y-2 border-l-2 border-slate-100 dark:border-slate-700 ml-4">
-                                                        {subs.map(s => (
-                                                            <div key={s.full} className="flex justify-between items-center p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700">
-                                                                <span className="text-sm text-slate-600 dark:text-slate-400">{s.sub}</span>
-                                                                <button onClick={() => deleteCategory(s.full)} className="text-red-300 dark:text-red-400 p-1 hover:text-red-500"><LucideIcon name="trash-2" size={16} /></button>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ));
-                                    })()}
-                                    {categories.length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500 italic">Keine Kategorien vorhanden.</p>}
-                                </div>
-                                
-                                <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase mb-3">Neue Kategorie</h3>
-                                <div className="space-y-2">
-                                    <select 
-                                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-3 font-bold outline-none text-sm appearance-none dark:text-white" 
-                                        value={newCatParent} 
-                                        onChange={e=>setNewCatParent(e.target.value)}
-                                    >
-                                        <option value="">-- Als Hauptkategorie --</option>
-                                        {categories.filter(c => !c.includes(' - ')).map(c => <option key={c} value={c}>Unterkategorie von: {c}</option>)}
-                                    </select>
-                                    <div className="flex gap-2">
-                                        <input className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl p-3 font-bold outline-none text-sm dark:text-white dark:placeholder-slate-500" placeholder="Name der Kategorie..." value={newCatName} onChange={e=>setNewCatName(e.target.value)} />
-                                        <button onClick={addCategory} className="bg-blue-600 hover:bg-blue-700 text-white px-5 rounded-xl transition-colors"><LucideIcon name="plus" size={20}/></button>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     )}
 
-                    {/* --- ADD MODAL (Item/Job) --- */}
+                    {/* --- ADD MODAL (Item/Bundle/Job) --- */}
                     {showAddModal && (
                         <div className="fixed inset-0 z-[100] bg-slate-900/60 dark:bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4 transition-colors">
                             <div className="bg-white dark:bg-slate-800 w-full max-w-md sm:max-w-3xl rounded-t-[3rem] sm:rounded-[3rem] p-8 animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar transition-colors">
                                 <div className="flex justify-between mb-8 items-center">
-                                    <h2 className="text-2xl font-black">{activeTab === 'lager' ? (editingItem ? "Bearbeiten" : "Neu anlegen") : "Job planen"}</h2>
+                                    <h2 className="text-2xl font-black">
+                                        {activeTab === 'lager' ? (editingItem ? "Artikel bearbeiten" : "Neuer Artikel") : 
+                                         activeTab === 'management' ? (editingItem ? "Bundle bearbeiten" : "Neues Bundle") : 
+                                         "Job planen"}
+                                    </h2>
                                     <button onClick={() => {setShowAddModal(false); setEditingItem(null);}}><LucideIcon name="x" className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300" /></button>
                                 </div>
                                 
-                                {activeTab === 'lager' ? (
+                                {activeTab === 'lager' || activeTab === 'management' ? (
                                     <form onSubmit={saveInventoryItem} className="space-y-6">
-                                        {!editingItem && (
-                                            <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-2xl mb-6 sm:w-1/2 sm:mx-auto">
-                                                <button type="button" onClick={() => setItemType('item')} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${itemType === 'item' ? 'bg-white dark:bg-slate-800 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-400'}`}>Artikel</button>
-                                                <button type="button" onClick={() => setItemType('bundle')} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${itemType === 'bundle' ? 'bg-white dark:bg-slate-800 shadow-sm text-purple-600 dark:text-purple-400' : 'text-slate-400 dark:text-slate-400'}`}>Bundle</button>
-                                            </div>
-                                        )}
-                                        
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                             <div>
                                                 <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase ml-1">Name</label>
