@@ -1210,22 +1210,21 @@
                                                         </div>
                                                         <div className="calendar-grid gap-2 lg:gap-4">
                                                             {calendarDays.map((date, i) => {
-                                                                const dateStr = date ? date.toISOString().split('T')[0] : null;
+                                                                // Zeitzonen-Bug Fix: Lokale Datumserstellung statt .toISOString()
+                                                                const dateStr = date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : null;
                                                                 const dateJobs = date ? jobs.filter(j => j.startDate <= dateStr && j.endDate >= dateStr).sort((a,b)=>a.id.localeCompare(b.id)) : [];
                                                                 const isToday = date && date.toDateString() === new Date().toDateString();
                                                                 
                                                                 const isStartOfWeek = i % 7 === 0;
                                                                 const isEndOfWeek = i % 7 === 6;
 
+                                                                // Hover-Text (Tooltip) für den Tag
+                                                                const hoverTitle = (date && dateJobs.length > 0) ? `Jobs am ${date.toLocaleDateString('de-DE')}:\n` + dateJobs.map(j => `• ${j.name}`).join('\n') : undefined;
+
                                                                 return (
                                                                     <div key={i} 
-                                                                         onClick={() => {
-                                                                            if(date) {
-                                                                                setJobFormData({ name: "", startDate: dateStr, endDate: dateStr, items: {} });
-                                                                                setShowAddModal(true);
-                                                                            }
-                                                                         }}
-                                                                         className={`aspect-square flex flex-col items-center pt-2 lg:pt-3 rounded-2xl text-sm lg:text-base relative transition-colors ${!date ? '' : 'bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer'} ${isToday ? 'ring-2 ring-blue-400 dark:ring-blue-500 font-black shadow-inner' : ''}`}>
+                                                                         title={hoverTitle}
+                                                                         className={`aspect-square flex flex-col items-center pt-2 lg:pt-3 rounded-2xl text-sm lg:text-base relative transition-colors ${!date ? '' : 'bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800'} ${isToday ? 'ring-2 ring-blue-400 dark:ring-blue-500 font-black shadow-inner' : ''}`}>
                                                                         {date && <span className="z-10 text-slate-700 dark:text-slate-300">{date.getDate()}</span>}
                                                                         
                                                                         {/* Job Lines Container */}
@@ -1239,8 +1238,9 @@
                                                                                     const colors = ['bg-blue-500', 'bg-purple-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-indigo-500'];
                                                                                     const colorClass = colors[colorHash % colors.length];
 
-                                                                                    let ml = isStart ? 'ml-1.5 lg:ml-2 rounded-l-md lg:rounded-l-lg' : (isStartOfWeek ? 'ml-0 rounded-l-md lg:rounded-l-lg' : '-ml-2 lg:-ml-4');
-                                                                                    let mr = isEnd ? 'mr-1.5 lg:mr-2 rounded-r-md lg:rounded-r-lg' : (isEndOfWeek ? 'mr-0 rounded-r-md lg:rounded-r-lg' : '-mr-2 lg:-mr-4');
+                                                                                    // Korrigierte Ränder, damit die Balken nicht überlappen (-ml-1 statt -ml-2)
+                                                                                    let ml = isStart ? 'ml-1.5 lg:ml-2 rounded-l-md lg:rounded-l-lg' : (isStartOfWeek ? 'ml-0 rounded-l-md lg:rounded-l-lg' : '-ml-1 lg:-ml-2');
+                                                                                    let mr = isEnd ? 'mr-1.5 lg:mr-2 rounded-r-md lg:rounded-r-lg' : (isEndOfWeek ? 'mr-0 rounded-r-md lg:rounded-r-lg' : '-mr-1 lg:-mr-2');
                                                                                     
                                                                                     if (!isStart && !isStartOfWeek) ml += ' z-0';
                                                                                     
@@ -1251,7 +1251,6 @@
                                                                                                  setActiveJobId(j.id); 
                                                                                              }}
                                                                                              className={`h-1.5 lg:h-2 ${colorClass} cursor-pointer hover:opacity-75 transition-opacity relative ${ml} ${mr}`}
-                                                                                             title={j.name}
                                                                                         />
                                                                                     );
                                                                                 })}
