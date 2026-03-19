@@ -38,6 +38,34 @@
         .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: #94a3b8; }
         .dark .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: #64748b; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+
+        /* Schraffiertes Muster für abgeschlossene Jobs */
+        .bg-striped {
+            background-image: repeating-linear-gradient(
+                45deg,
+                rgba(255, 255, 255, 0.4),
+                rgba(255, 255, 255, 0.4) 4px,
+                transparent 4px,
+                transparent 8px
+            );
+        }
+
+        /* Dezenter Glow Effekt für Cards */
+        .glow-card {
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.05);
+            transition: all 0.3s ease;
+        }
+        .glow-card:hover {
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+        .dark .glow-card {
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.1);
+        }
+        .dark .glow-card:hover {
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.35);
+            border-color: rgba(59, 130, 246, 0.5);
+        }
     </style>
 </head>
 <body>
@@ -865,12 +893,12 @@
                                     <div className="w-full xl:w-[380px] 2xl:w-[450px] shrink-0 space-y-6 xl:sticky xl:top-[120px]">
                                         
                                         {/* Job Header Card */}
-                                        <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm">
+                                        <div className="glow-card bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700">
                                             {activeJob.status === 'completed' && (
                                                 <span className="inline-block bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 text-[10px] font-black uppercase px-2 py-1 rounded-md mb-3">Abgeschlossen</span>
                                             )}
                                             {activeJob.status === 'cancelled' && (
-                                                <span className="inline-block bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400 text-[10px] font-black uppercase px-2 py-1 rounded-md mb-3">Storniert</span>
+                                                <span className="inline-block bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 text-[10px] font-black uppercase px-2 py-1 rounded-md mb-3">Storniert</span>
                                             )}
                                             
                                             <h2 className="text-3xl font-black mb-2 leading-tight">{activeJob.name}</h2>
@@ -902,7 +930,7 @@
                                         </div>
 
                                         {/* Progress Card */}
-                                        <div className={`bg-gradient-to-br rounded-[2.5rem] p-7 text-white shadow-xl transition-colors ${jobMode === 'packen' ? 'from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800 shadow-blue-200 dark:shadow-none' : 'from-purple-600 to-fuchsia-700 dark:from-purple-700 dark:to-fuchsia-800 shadow-purple-200 dark:shadow-none'}`}>
+                                        <div className={`glow-card bg-gradient-to-br rounded-[2.5rem] p-7 text-white shadow-xl transition-colors ${jobMode === 'packen' ? 'from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-800' : 'from-purple-600 to-fuchsia-700 dark:from-purple-700 dark:to-fuchsia-800'}`}>
                                             <div className="flex justify-between items-start mb-6">
                                                 <div>
                                                     <p className="opacity-80 text-xs font-black uppercase tracking-widest mb-1">
@@ -977,7 +1005,7 @@
                                                                         packInfo.status === 'teilweise' ? 'minus-circle' : 'circle';
 
                                                         return (
-                                                            <div key={invId} className="bg-white dark:bg-slate-800 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden transition-colors h-fit flex flex-col">
+                                                            <div key={invId} className="glow-card bg-white dark:bg-slate-800 rounded-[2rem] border border-slate-100 dark:border-slate-700 overflow-hidden h-fit flex flex-col">
                                                                 <div className="p-4 flex items-center gap-4">
                                                                     <button onClick={() => {
                                                                         if (jobMode === 'packen') togglePackingStatus(activeJob.id, invId, requiredQty);
@@ -1086,7 +1114,7 @@
                                             {/* Grid erweitert für Widescreen */}
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 lg:gap-6">
                                                 {pendingJobs.map(job => (
-                                                    <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm hover:border-blue-300 dark:hover:border-blue-700 active:scale-95 transition-all cursor-pointer group flex flex-col h-full">
+                                                    <div key={job.id} onClick={() => setActiveJobId(job.id)} className="glow-card bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 active:scale-95 cursor-pointer group flex flex-col h-full">
                                                         <p className="text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase mb-2">
                                                             {new Date(job.startDate).toLocaleDateString('de-DE')}
                                                             {job.startDate !== job.endDate && ` - ${new Date(job.endDate).toLocaleDateString('de-DE')}`}
@@ -1125,7 +1153,7 @@
                                                     {showCompletedJobs && (
                                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 mt-2">
                                                             {completedJobs.map(job => (
-                                                                <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 active:scale-95 transition-all cursor-pointer opacity-70 hover:opacity-100">
+                                                                <div key={job.id} onClick={() => setActiveJobId(job.id)} className="glow-card bg-slate-50 dark:bg-slate-900/50 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 active:scale-95 cursor-pointer opacity-70 hover:opacity-100">
                                                                     <div className="flex justify-between items-start mb-2">
                                                                         <p className="text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase">
                                                                             {new Date(job.startDate).toLocaleDateString('de-DE')}
@@ -1155,7 +1183,7 @@
                                                     {showCancelledJobs && (
                                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 mt-2">
                                                             {cancelledJobs.map(job => (
-                                                                <div key={job.id} onClick={() => setActiveJobId(job.id)} className="bg-red-50/50 dark:bg-red-900/10 p-6 rounded-[2rem] border border-red-100 dark:border-red-900/30 active:scale-95 transition-all cursor-pointer opacity-70 hover:opacity-100">
+                                                                <div key={job.id} onClick={() => setActiveJobId(job.id)} className="glow-card bg-red-50/50 dark:bg-red-900/10 p-6 rounded-[2rem] border border-red-100 dark:border-red-900/30 active:scale-95 cursor-pointer opacity-70 hover:opacity-100">
                                                                     <div className="flex justify-between items-start mb-2">
                                                                         <p className="text-red-400 dark:text-red-500 text-[10px] font-black uppercase">
                                                                             {new Date(job.startDate).toLocaleDateString('de-DE')}
@@ -1202,7 +1230,7 @@
                                         </div>
                                         
                                         <div className={`grid grid-cols-1 ${calendarView === 'month' ? 'lg:grid-cols-3 xl:grid-cols-4' : ''} gap-8 items-start`}>
-                                            <div className={`bg-white dark:bg-slate-800 rounded-[2rem] p-6 lg:p-8 shadow-sm border border-slate-100 dark:border-slate-700 transition-colors ${calendarView === 'month' ? 'lg:col-span-2 xl:col-span-3' : 'w-full'}`}>
+                                            <div className={`glow-card bg-white dark:bg-slate-800 rounded-[2rem] p-6 lg:p-8 border border-slate-100 dark:border-slate-700 transition-colors ${calendarView === 'month' ? 'lg:col-span-2 xl:col-span-3' : 'w-full'}`}>
                                                 {calendarView === 'month' ? (
                                                     <>
                                                         <div className="calendar-grid text-center text-[10px] font-black text-slate-300 dark:text-slate-500 mb-4 gap-2 lg:gap-4">
@@ -1233,10 +1261,17 @@
                                                                                 {dateJobs.map(j => {
                                                                                     const isStart = j.startDate === dateStr;
                                                                                     const isEnd = j.endDate === dateStr;
+                                                                                    const isCompleted = j.status === 'completed';
+                                                                                    const isCancelled = j.status === 'cancelled';
                                                                                     
-                                                                                    const colorHash = Array.from(j.id).reduce((acc, char) => acc + char.charCodeAt(0), 0);
-                                                                                    const colors = ['bg-blue-500', 'bg-purple-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-indigo-500'];
-                                                                                    const colorClass = colors[colorHash % colors.length];
+                                                                                    let colorClass = 'bg-green-500';
+                                                                                    if (isCancelled) {
+                                                                                        colorClass = 'bg-red-500';
+                                                                                    } else if (isCompleted) {
+                                                                                        const colorHash = Array.from(j.id).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                                                                                        const colors = ['bg-blue-500', 'bg-purple-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-indigo-500'];
+                                                                                        colorClass = colors[colorHash % colors.length];
+                                                                                    }
 
                                                                                     // Korrigierte Ränder, damit die Balken nicht überlappen (-ml-1 statt -ml-2)
                                                                                     let ml = isStart ? 'ml-1.5 lg:ml-2 rounded-l-md lg:rounded-l-lg' : (isStartOfWeek ? 'ml-0 rounded-l-md lg:rounded-l-lg' : '-ml-1 lg:-ml-2');
@@ -1250,7 +1285,7 @@
                                                                                                  e.stopPropagation(); 
                                                                                                  setActiveJobId(j.id); 
                                                                                              }}
-                                                                                             className={`h-1.5 lg:h-2 ${colorClass} cursor-pointer hover:opacity-75 transition-opacity relative ${ml} ${mr}`}
+                                                                                             className={`h-1.5 lg:h-2 ${colorClass} ${isCompleted ? 'bg-striped' : ''} cursor-pointer hover:opacity-75 transition-opacity relative ${ml} ${mr}`}
                                                                                         />
                                                                                     );
                                                                                 })}
@@ -1281,8 +1316,8 @@
 
                                                             return (
                                                                 <div key={i} onClick={() => { setCurrentDate(monthDate); setCalendarView('month'); }} 
-                                                                     className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 transition-colors relative group">
-                                                                     {hasJobs && <div className="absolute top-3 right-3 w-2 h-2 bg-blue-500 rounded-full shadow-sm shadow-blue-200 dark:shadow-none"></div>}
+                                                                     className="glow-card bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 cursor-pointer relative group">
+                                                                     {hasJobs && <div className="absolute top-3 right-3 w-2 h-2 bg-green-500 rounded-full shadow-sm shadow-green-200 dark:shadow-none"></div>}
                                                                     <h4 className="text-xs lg:text-sm font-bold text-center mb-3 lg:mb-4 uppercase tracking-widest text-slate-500 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{monthDate.toLocaleString('de-DE', { month: 'long' })}</h4>
                                                                     <div className="grid grid-cols-7 gap-1 text-[8px] lg:text-[10px] text-center text-slate-400 dark:text-slate-500">
                                                                         {['M','D','M','D','F','S','S'].map((d,idx) => <div key={idx} className="font-bold">{d}</div>)}
@@ -1313,16 +1348,24 @@
                                                     </h3>
                                                     <div className="max-h-[32rem] overflow-y-auto custom-scrollbar pr-2 space-y-3">
                                                         {jobs.filter(isJobInCurrentMonth).map(j => {
-                                                            const colorHash = Array.from(j.id).reduce((acc, char) => acc + char.charCodeAt(0), 0);
-                                                            const colors = ['bg-blue-500', 'bg-purple-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-indigo-500'];
-                                                            const colorClass = colors[colorHash % colors.length];
+                                                            const isCompleted = j.status === 'completed';
+                                                            const isCancelled = j.status === 'cancelled';
+                                                            
+                                                            let colorClass = 'bg-green-500';
+                                                            if (isCancelled) {
+                                                                colorClass = 'bg-red-500';
+                                                            } else if (isCompleted) {
+                                                                const colorHash = Array.from(j.id).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                                                                const colors = ['bg-blue-500', 'bg-purple-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-indigo-500'];
+                                                                colorClass = colors[colorHash % colors.length];
+                                                            }
 
                                                             return (
-                                                                <div key={j.id} onClick={() => setActiveJobId(j.id)} className={`bg-white dark:bg-slate-800 p-5 lg:p-6 rounded-[1.5rem] flex justify-between items-center border border-slate-100 dark:border-slate-700 shadow-sm cursor-pointer hover:border-blue-200 dark:hover:border-blue-800 transition-colors ${j.status === 'cancelled' ? 'opacity-50' : ''}`}>
+                                                                <div key={j.id} onClick={() => setActiveJobId(j.id)} className={`glow-card bg-white dark:bg-slate-800 p-5 lg:p-6 rounded-[1.5rem] flex justify-between items-center border border-slate-100 dark:border-slate-700 cursor-pointer transition-colors ${isCancelled ? 'opacity-50' : ''}`}>
                                                                     <div className="flex items-center gap-4">
-                                                                        <div className={`w-3 h-3 lg:w-4 lg:h-4 rounded-full ${j.status === 'completed' ? 'bg-green-500' : j.status === 'cancelled' ? 'bg-orange-500' : colorClass}`}></div>
+                                                                        <div className={`w-3 h-3 lg:w-4 lg:h-4 rounded-full ${colorClass} ${isCompleted ? 'bg-striped' : ''}`}></div>
                                                                         <div className="flex flex-col">
-                                                                            <span className={`font-bold text-base lg:text-lg ${j.status === 'completed' || j.status === 'cancelled' ? 'text-slate-500 dark:text-slate-400 line-through' : ''}`}>{j.name}</span>
+                                                                            <span className={`font-bold text-base lg:text-lg ${isCompleted || isCancelled ? 'text-slate-500 dark:text-slate-400 line-through' : ''}`}>{j.name}</span>
                                                                             <span className="text-[11px] lg:text-xs font-medium text-slate-400 dark:text-slate-500 mt-1">{new Date(j.startDate).toLocaleDateString('de-DE')} {j.startDate !== j.endDate && `- ${new Date(j.endDate).toLocaleDateString('de-DE')}`}</span>
                                                                         </div>
                                                                     </div>
@@ -1359,7 +1402,7 @@
                                             
                                             // Helper to render a single item
                                             const renderItem = (item) => (
-                                                <div key={item.id} className={`bg-white dark:bg-slate-800 p-5 lg:p-6 rounded-[2rem] border ${item.isBundle ? 'border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-900/10' : 'border-slate-100 dark:border-slate-700'} flex flex-col gap-4 lg:gap-6 shadow-sm transition-colors h-full`}>
+                                                <div key={item.id} className={`glow-card bg-white dark:bg-slate-800 p-5 lg:p-6 rounded-[2rem] border ${item.isBundle ? 'border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-900/10' : 'border-slate-100 dark:border-slate-700'} flex flex-col gap-4 lg:gap-6 h-full`}>
                                                     <div className="flex justify-between items-start flex-1">
                                                         <div className="flex items-center gap-4">
                                                             <div className="w-12 h-12 shrink-0 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 flex items-center justify-center overflow-hidden">
@@ -1436,7 +1479,7 @@
                                         <h2 className="text-xl lg:text-2xl font-bold px-2">Statistik</h2>
                                         
                                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8 items-start">
-                                            <div className="bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+                                            <div className="glow-card bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700">
                                                 <h3 className="font-bold text-lg mb-8 flex items-center gap-3">
                                                     <div className="bg-blue-50 dark:bg-blue-900/30 p-2 rounded-lg">
                                                         <LucideIcon name="bar-chart-3" className="text-blue-600 dark:text-blue-400" size={24}/>
@@ -1459,7 +1502,7 @@
                                                 </div>
                                             </div>
 
-                                            <div className="bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+                                            <div className="glow-card bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700">
                                                 <button onClick={() => setExpandedCatsPlaner(prev => ({...prev, 'lastUsed': !prev['lastUsed']}))} className="flex justify-between items-center w-full">
                                                     <h3 className="font-bold text-lg flex items-center gap-3">
                                                         <div className="bg-purple-50 dark:bg-purple-900/30 p-2 rounded-lg">
@@ -1505,7 +1548,7 @@
 
                                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 lg:gap-12 items-start">
                                             {/* KATEGORIEN */}
-                                            <div className="bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+                                            <div className="glow-card bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700">
                                                 <h3 className="text-sm lg:text-base font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest mb-8 flex items-center gap-3">
                                                     <LucideIcon name="folder-tree" size={24} className="text-blue-500" /> Kategorien
                                                 </h3>
@@ -1562,7 +1605,7 @@
                                             </div>
 
                                             {/* BUNDLES */}
-                                            <div className="bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+                                            <div className="glow-card bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700">
                                                 <div className="flex justify-between items-center mb-8">
                                                     <h3 className="text-sm lg:text-base font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest flex items-center gap-3">
                                                         <LucideIcon name="layers" size={24} /> Bundles
