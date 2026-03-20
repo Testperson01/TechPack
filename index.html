@@ -74,6 +74,45 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef } = React;
         
+        // --- SICHERHEITS-NETZ FÜR FEHLER (Verhindert weißen Bildschirm) ---
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null, errorInfo: null };
+            }
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
+            componentDidCatch(error, errorInfo) {
+                console.error("TechPack Crash:", error, errorInfo);
+                this.setState({ errorInfo });
+            }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="min-h-screen flex items-center justify-center bg-red-50 p-6">
+                            <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-2xl w-full border border-red-200">
+                                <h1 className="text-2xl font-black text-red-600 mb-4 flex items-center gap-2">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                                    App abgestürzt
+                                </h1>
+                                <p className="text-slate-600 mb-6">Ein unerwarteter Fehler ist aufgetreten. Bitte mache einen Screenshot hiervon:</p>
+                                <pre className="bg-slate-900 text-red-400 p-4 rounded-xl text-xs overflow-auto whitespace-pre-wrap max-h-[50vh]">
+                                    {this.state.error && this.state.error.toString()}
+                                    <br/><br/>
+                                    {this.state.errorInfo && this.state.errorInfo.componentStack}
+                                </pre>
+                                <button onClick={() => window.location.reload()} className="mt-6 w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-colors">
+                                    App neu laden
+                                </button>
+                            </div>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
         // Stabiler Wrapper für die Lucide Icons
         const LucideIcon = ({ name, size = 24, strokeWidth = 2, className = "", onClick }) => {
             const iconRef = useRef(null);
@@ -99,35 +138,41 @@
         };
 
         const App = () => {
-            // --- THEME STATE ---
+            // --- THEME STATE (mit try-catch gegen iframe-Restriktionen) ---
             const [isDarkMode, setIsDarkMode] = useState(() => {
-                if (typeof window !== 'undefined') {
-                    return localStorage.getItem('techpack_theme') === 'dark' || 
-                           (!('techpack_theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
-                }
+                try {
+                    if (typeof window !== 'undefined') {
+                        return localStorage.getItem('techpack_theme') === 'dark' || 
+                               (!('techpack_theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                    }
+                } catch(e) { console.warn("LocalStorage blockiert."); }
                 return false;
             });
 
             useEffect(() => {
-                if (isDarkMode) {
-                    document.documentElement.classList.add('dark');
-                    localStorage.setItem('techpack_theme', 'dark');
-                } else {
-                    document.documentElement.classList.remove('dark');
-                    localStorage.setItem('techpack_theme', 'light');
-                }
+                try {
+                    if (isDarkMode) {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('techpack_theme', 'dark');
+                    } else {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('techpack_theme', 'light');
+                    }
+                } catch(e) {}
             }, [isDarkMode]);
 
             // --- SYNC CODE STATE (GERÄTE KOPPELN) ---
             const [syncCode, setSyncCode] = useState(() => {
-                if (typeof window !== 'undefined') {
-                    const saved = localStorage.getItem('techpack_sync_code');
-                    if (saved) return saved;
-                    const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-                    localStorage.setItem('techpack_sync_code', newCode);
-                    return newCode;
-                }
-                return "SYNC00";
+                try {
+                    if (typeof window !== 'undefined') {
+                        const saved = localStorage.getItem('techpack_sync_code');
+                        if (saved) return saved;
+                        const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+                        localStorage.setItem('techpack_sync_code', newCode);
+                        return newCode;
+                    }
+                } catch(e) {}
+                return Math.random().toString(36).substring(2, 8).toUpperCase();
             });
             const [tempSyncCode, setTempSyncCode] = useState('');
 
@@ -159,7 +204,7 @@
 
             const [currentDate, setCurrentDate] = useState(new Date());
             const [calendarView, setCalendarView] = useState('month'); 
-            const [hoveredJobId, setHoveredJobId] = useState(null); // NEU: Hover State für Bidirektionales Highlight
+            const [hoveredJobId, setHoveredJobId] = useState(null); 
             const [dialog, setDialog] = useState(null);
             
             // Form States
@@ -362,18 +407,23 @@
                 return jobs.filter(j => j.status === 'active' && j.startDate === tomorrowStr);
             }, [jobs]);
 
+            // Notification mit Try-Catch Wrapper
             useEffect(() => {
-                if (upcomingJobs.length > 0 && "Notification" in window) {
-                    if (Notification.permission === "granted") {
-                        if (!sessionStorage.getItem('techpack_notified')) {
-                            const jobNames = upcomingJobs.map(j => j.name).join(', ');
-                            new Notification("TechPack Erinnerung", { body: `Morgen starten: ${jobNames}` });
-                            sessionStorage.setItem('techpack_notified', 'true');
+                try {
+                    if (upcomingJobs.length > 0 && "Notification" in window) {
+                        if (Notification.permission === "granted") {
+                            try {
+                                if (!sessionStorage.getItem('techpack_notified')) {
+                                    const jobNames = upcomingJobs.map(j => j.name).join(', ');
+                                    new Notification("TechPack Erinnerung", { body: `Morgen starten: ${jobNames}` });
+                                    sessionStorage.setItem('techpack_notified', 'true');
+                                }
+                            } catch(e) {}
+                        } else if (Notification.permission !== "denied") {
+                            Notification.requestPermission().catch(()=>{});
                         }
-                    } else if (Notification.permission !== "denied") {
-                        Notification.requestPermission();
                     }
-                }
+                } catch(e) {}
             }, [upcomingJobs]);
 
             const usageStats = useMemo(() => {
@@ -422,6 +472,7 @@
                 const grouped = { 'Bundles': { items: inventory.filter(i => i.isBundle), subs: {} } };
                 
                 categories.forEach(cat => {
+                    if (typeof cat !== 'string') return;
                     const parts = cat.split(' - ');
                     const main = parts[0];
                     if (!grouped[main]) grouped[main] = { items: [], subs: {} };
@@ -434,8 +485,8 @@
                 inventory.forEach(item => {
                     if (item.isBundle) return;
                     const cat = item.category || 'Sonstiges';
-                    const parts = cat.split(' - ');
-                    const main = parts[0];
+                    const parts = (cat || '').split(' - ');
+                    const main = parts[0] || 'Sonstiges';
                     const sub = parts[1];
 
                     if (!grouped[main]) grouped[main] = { items: [], subs: {} };
@@ -448,7 +499,7 @@
                     }
                 });
 
-                const sonstiges = inventory.filter(i => !i.isBundle && !categories.includes(i.category) && !i.category?.includes(' - '));
+                const sonstiges = inventory.filter(i => !i.isBundle && !categories.includes(i.category) && !(i.category || '').includes(' - '));
                 if (sonstiges.length > 0) grouped['Sonstiges'] = { items: sonstiges, subs: {} };
                 
                 return grouped;
@@ -461,7 +512,7 @@
                     const item = inventory.find(i => i.id === invId);
                     if (!item) return;
                     const catName = item.category || 'Sonstiges';
-                    const mainCat = catName.split(' - ')[0]; 
+                    const mainCat = (catName || '').split(' - ')[0]; 
                     
                     if (!grouped[catName]) grouped[catName] = [];
                     grouped[catName].push({ invId, requiredQty, item });
@@ -545,52 +596,70 @@
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 
-                doc.setFontSize(22);
-                doc.setTextColor(30, 41, 59);
-                doc.text(`Packliste: ${activeJob.name}`, 14, 22);
-                
-                doc.setFontSize(11);
-                doc.setTextColor(100, 116, 139);
                 const startDateStr = new Date(activeJob.startDate).toLocaleDateString('de-DE');
                 const endDateStr = new Date(activeJob.endDate).toLocaleDateString('de-DE');
-                const dateStr = activeJob.startDate !== activeJob.endDate ? `${startDateStr} bis ${endDateStr}` : startDateStr;
-                doc.text(`Zeitraum: ${dateStr}`, 14, 30);
-                doc.text(`Exportiert am: ${new Date().toLocaleDateString('de-DE')} ${new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute:'2-digit'})} Uhr`, 14, 36);
+                const dateStr = activeJob.startDate !== activeJob.endDate ? `${startDateStr} - ${endDateStr}` : startDateStr;
+                const jobName = activeJob.name || 'Job';
                 
-                const tableData = [];
+                // Exportiert am (Kopfzeile)
+                doc.setFontSize(9);
+                doc.setTextColor(148, 163, 184); // slate-400
+                doc.text(`Exportiert am: ${new Date().toLocaleDateString('de-DE')} ${new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute:'2-digit'})} Uhr`, 14, 12);
+                
+                // Titel des Dokuments mit Name UND Datum
+                doc.setFontSize(20);
+                doc.setTextColor(30, 41, 59); // slate-800
+                doc.text(`${jobName} (${dateStr})`, 14, 24);
+                
+                // Tabellen-Daten gruppieren
+                const groupedForPDF = {};
                 Object.entries(activeJob.selectedItemIds).forEach(([invId, reqQty]) => {
                     const item = inventory.find(i => i.id === invId);
                     if (!item) return;
-                    
+                    const cat = item.category || 'Sonstiges';
+                    if (!groupedForPDF[cat]) groupedForPDF[cat] = [];
+                    groupedForPDF[cat].push({ item, reqQty });
+                });
+
+                const tableData = [];
+                Object.keys(groupedForPDF).sort().forEach(cat => {
+                    // Kategorie Header Row
                     tableData.push([
-                        `${reqQty}x`, 
-                        item.name, 
-                        item.category || 'Sonstiges',
-                        '', 
-                        ''  
+                        { content: cat, colSpan: 5, styles: { fillColor: [241, 245, 249], textColor: [71, 85, 105], fontStyle: 'bold' } }
                     ]);
                     
-                    if (item.accessories && item.accessories.length > 0) {
-                        item.accessories.forEach(acc => {
-                            tableData.push([
-                                `1x`, 
-                                `   ↳ ${acc.name}`, 
-                                'Zubehör',
-                                '',
-                                ''
-                            ]);
-                        });
-                    }
+                    // Items innerhalb Kategorie (mit Sicherheitscheck für Namen)
+                    groupedForPDF[cat].sort((a, b) => (a.item.name || '').localeCompare(b.item.name || '')).forEach(({item, reqQty}) => {
+                        tableData.push([
+                            `${reqQty}x`, 
+                            item.name, 
+                            item.category || 'Sonstiges',
+                            '', 
+                            ''  
+                        ]);
+                        
+                        if (item.accessories && item.accessories.length > 0) {
+                            item.accessories.forEach(acc => {
+                                tableData.push([
+                                    `1x`, 
+                                    `   ↳ ${acc.name}`, 
+                                    'Zubehör',
+                                    '',
+                                    ''
+                                ]);
+                            });
+                        }
+                    });
                 });
                 
                 doc.autoTable({
-                    startY: 44,
+                    startY: 32,
                     head: [['Menge', 'Artikel', 'Kategorie', 'Out', 'In']],
                     body: tableData,
                     theme: 'grid',
-                    headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold', halign: 'left' },
+                    headStyles: { fillColor: [147, 51, 234], textColor: 255, fontStyle: 'bold', halign: 'left' }, // LILA (purple-600)
                     bodyStyles: { textColor: [51, 65, 85] },
-                    alternateRowStyles: { fillColor: [248, 250, 252] },
+                    alternateRowStyles: { fillColor: [255, 255, 255] }, 
                     columnStyles: {
                         0: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
                         1: { cellWidth: 'auto', halign: 'left' },
@@ -598,7 +667,13 @@
                         3: { cellWidth: 15, halign: 'center' },
                         4: { cellWidth: 15, halign: 'center' } 
                     },
+                    margin: { bottom: 20 },
                     didDrawCell: function(data) {
+                        // Skip category header rows for checkboxes
+                        if (data.row.raw[0] && typeof data.row.raw[0] === 'object' && data.row.raw[0].colSpan === 5) {
+                            return;
+                        }
+                        
                         if ((data.column.index === 3 || data.column.index === 4) && data.section === 'head') {
                              doc.setTextColor(255, 255, 255);
                         }
@@ -611,10 +686,25 @@
                             doc.rect(x, y, boxSize, boxSize);
                         }
                     },
+                    didDrawPage: function(data) {
+                        const pageWidth = doc.internal.pageSize.width;
+                        const pageHeight = doc.internal.pageSize.height;
+                        
+                        doc.setFontSize(9);
+                        doc.setTextColor(148, 163, 184); // slate-400
+                        
+                        // Footer Name & Adresse
+                        doc.text("Matthis Maier | Augsburger Straße 21, 10789 Berlin", 14, pageHeight - 10);
+                        // Footer Seitenzahl
+                        doc.text(`Seite ${data.pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+                    },
                     styles: { fontSize: 10, cellPadding: 4 }
                 });
                 
-                doc.save(`Packliste_${activeJob.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
+                // Dateiname mit Projektname UND Datum
+                const safeFileNameName = jobName.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '_');
+                const safeFileNameDate = dateStr.replace(/\s+/g, '').replace(/[^a-zA-Z0-9.-]/g, '_');
+                doc.save(`${safeFileNameName}_${safeFileNameDate}.pdf`);
             };
 
             const addBundleToJob = (bundleItem) => {
@@ -1447,7 +1537,7 @@
                                                             <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Bestand</span>
                                                             <div className="flex items-center gap-5">
                                                                 <button onClick={() => setInventory(inventory.map(i=>i.id===item.id?{...i, quantity:Math.max(1, i.quantity-1)}:i))} className="bg-white dark:bg-slate-700 shadow-sm w-9 h-9 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 hover:scale-105 active:scale-95 transition-all"><LucideIcon name="minus" size={18} /></button>
-                                                                <span className="font-bold text-xl w-6 text-center">{item.quantity || 1}</span>
+                                                                <span className="font-black text-xl w-6 text-center">{item.quantity || 1}</span>
                                                                 <button onClick={() => setInventory(inventory.map(i=>i.id===item.id?{...i, quantity:i.quantity+1}:i))} className="bg-white dark:bg-slate-700 shadow-sm w-9 h-9 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 hover:scale-105 active:scale-95 transition-all"><LucideIcon name="plus" size={18} /></button>
                                                             </div>
                                                         </div>
@@ -1471,7 +1561,7 @@
                                                                 if (subItems.length === 0) return null;
                                                                 return (
                                                                     <div key={subCat} className="col-span-full mt-6 border-l-4 border-slate-200 dark:border-slate-700 pl-4 lg:pl-6 ml-2 lg:ml-4">
-                                                                        <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-4">{subCat}</h4>
+                                                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-4">{subCat}</h4>
                                                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
                                                                             {subItems.map(renderItem)}
                                                                         </div>
@@ -1572,6 +1662,7 @@
                                                     {(() => {
                                                         const catHierarchy = {};
                                                         categories.forEach(c => {
+                                                            if (typeof c !== 'string') return;
                                                             const parts = c.split(' - ');
                                                             const main = parts[0];
                                                             if (!catHierarchy[main]) catHierarchy[main] = [];
@@ -1609,7 +1700,7 @@
                                                             onChange={e=>setNewCatParent(e.target.value)}
                                                         >
                                                             <option value="">-- Als Hauptkategorie --</option>
-                                                            {categories.filter(c => !c.includes(' - ')).map(c => <option key={c} value={c}>Unterkategorie von: {c}</option>)}
+                                                            {categories.filter(c => typeof c === 'string' && !c.includes(' - ')).map(c => <option key={c} value={c}>Unterkategorie von: {c}</option>)}
                                                         </select>
                                                         <div className="flex gap-2">
                                                             <input className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl p-4 font-bold outline-none text-sm dark:text-white dark:placeholder-slate-500" placeholder="Name der Kategorie..." value={newCatName} onChange={e=>setNewCatName(e.target.value)} />
@@ -1739,7 +1830,7 @@
                                             onClick={() => {
                                                 if(tempSyncCode.length === 6) {
                                                     setSyncCode(tempSyncCode);
-                                                    localStorage.setItem('techpack_sync_code', tempSyncCode);
+                                                    try { localStorage.setItem('techpack_sync_code', tempSyncCode); } catch(e){}
                                                     setTempSyncCode('');
                                                     setDialog({ type: 'alert', message: 'Geräte erfolgreich gekoppelt! Lade Daten...' });
                                                 } else {
@@ -2005,7 +2096,7 @@
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        root.render(<ErrorBoundary><App /></ErrorBoundary>);
     </script>
 </body>
 </html>
